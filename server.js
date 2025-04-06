@@ -11,8 +11,8 @@ const __dirname = path.dirname(__filename);
 
 // --- Configuration ---
 const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://Azurely:<po2yOHjRLNJ4Gapv>@gcchat.aqgwni3.mongodb.net/chatApp?retryWrites=true&w=majority&appName=gcCHAT"; // Ensure correct password here
-const DB_NAME = 'chatApp';
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://Azurely:<po2yOHjRLNJ4Gapv>@gcchat.aqgwni3.mongodb.net/gcCHAT?retryWrites=true&w=majority&appName=gcCHAT"; // Ensure correct password here
+const DB_NAME = 'gcCHAT';
 const MESSAGES_COLLECTION_NAME = 'messages';
 const USERS_COLLECTION_NAME = 'users';
 const SALT_ROUNDS = 10;
