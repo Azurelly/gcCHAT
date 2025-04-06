@@ -1,8 +1,8 @@
 {
   "name": "electron-chat-server",
   "version": "1.0.0",
-  "description": "Simple WebSocket chat server",
-  "main": "server.js",
+  "description": "Simple WebSocket chat server with MongoDB persistence",
+  "main": "main.js",
   "scripts": {
     "start": "node server.js",
     "start:electron": "electron .",
@@ -12,13 +12,17 @@
   "keywords": [
     "chat",
     "websocket",
-    "server"
+    "electron",
+    "client",
+    "server",
+    "mongodb"
   ],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "ws": "^8.18.1"
+    "ws": "^8.18.1",
+    "mongodb": "^6.8.0"
   },
   "devDependencies": {
     "electron": "^35.1.4",
