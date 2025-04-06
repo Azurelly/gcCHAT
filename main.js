@@ -4,18 +4,15 @@ import { fileURLToPath } from 'url';
 import os from 'os';
 import { WebSocket } from 'ws';
 // Bonjour is no longer needed by the client connecting to a public server
-// import { Bonjour } from 'bonjour-service';
 
 // --- Configuration ---
-// This URL will be replaced with the actual public URL from Render later
-const SERVER_URL = 'wss://your-chat-server-url.onrender.com'; // Placeholder - USE wss:// for secure websockets
+// Connect to the deployed Render server using Secure WebSockets (wss)
+const SERVER_URL = 'wss://gcchat.onrender.com';
 
 // --- State ---
 let mainWindow = null;
 let serverAddress = SERVER_URL; // Store the target server URL
 let clientSocket = null;
-// let bonjour = new Bonjour(); // No Bonjour
-// let serviceBrowser = null; // No Bonjour
 let messageHistory = [];
 
 // --- Utility Functions ---
@@ -84,7 +81,6 @@ function connectToServer() {
 }
 
 // --- Network Discovery (REMOVED) ---
-// function findServer() { ... }
 
 
 // --- Electron App Lifecycle ---
@@ -134,7 +130,8 @@ app.on('quit', () => {
   if (clientSocket) {
       console.log("[Client] Closing WebSocket client connection...");
       // Prevent automatic reconnection attempts on quit
-      clientSocket.removeEventListener('close', connectToServer); // Remove listener if added
+      const closeHandler = () => setTimeout(connectToServer, 5000); // Recreate the handler reference
+      clientSocket.removeEventListener('close', closeHandler); // Remove listener if added
       clientSocket.close();
   }
 });
@@ -170,4 +167,3 @@ ipcMain.on('request-status', (event) => {
 });
 
 // Manual connect is removed as we connect to a fixed public URL
-// ipcMain.on('manual-connect', (event, ipAddress) => { ... });
