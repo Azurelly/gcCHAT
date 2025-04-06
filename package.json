@@ -1,0 +1,51 @@
+{
+  "name": "electron-chat-server",
+  "version": "1.0.0",
+  "description": "Simple WebSocket chat server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:electron": "electron .",
+    "build:electron": "electron-builder",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "chat",
+    "websocket",
+    "server"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "ws": "^8.18.1"
+  },
+  "devDependencies": {
+    "electron": "^35.1.4",
+    "electron-builder": "^26.0.12",
+    "bonjour-service": "^1.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "build": {
+    "appId": "com.example.electronchatapp",
+    "productName": "ElectronChatApp",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "style.css",
+      "node_modules/ws/**/*",
+      "node_modules/bonjour-service/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
