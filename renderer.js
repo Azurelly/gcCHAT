@@ -20,7 +20,7 @@ const connectionStatusSpan = document.getElementById('connection-status');
 const currentChannelSpan = document.getElementById('current-channel-name');
 const hostInfoSpan = document.getElementById('host-info');
 const userInfoSpan = document.getElementById('user-info');
-const partyModeButton = document.getElementById('party-mode-button');
+// const partyModeButton = document.getElementById('party-mode-button'); // Removed - using context menu now
 const typingIndicatorDiv = document.getElementById('typing-indicator');
 const profileModalBackdrop = document.getElementById('profile-modal-backdrop');
 const profileModal = document.getElementById('profile-modal');
@@ -56,7 +56,7 @@ let lastMessageSender = null;
 let channelToDelete = null;
 let allUsers = [];
 let onlineUsers = [];
-let partyModeActive = false;
+let partyModeActive = false; // Track own party mode state
 let typingTimeout = null;
 let currentlyTypingUsers = [];
 
@@ -92,7 +92,45 @@ function updateChannelHighlight() { /* ... no change ... */ document.querySelect
 sidebar.addEventListener('contextmenu', (e) => { /* ... no change ... */ if (e.target.closest('.channel-item') || e.target.closest('#user-area')) return; e.preventDefault(); if (isAdmin) window.electronAPI.showSidebarContextMenu(); });
 
 // --- User List UI ---
-function renderUserList() { /* ... no change ... */ const onlineCount = onlineUsers.length; const offlineCount = allUsers.length - onlineCount; userListOnlineDiv.innerHTML = `<h4>Online — <span id="online-count">${onlineCount}</span></h4>`; userListOfflineDiv.innerHTML = `<h4>Offline — <span id="offline-count">${offlineCount < 0 ? 0 : offlineCount}</span></h4>`; const sortedUsers = [...allUsers].sort((a, b) => a.localeCompare(b)); sortedUsers.forEach(username => { const isOnline = onlineUsers.includes(username); const userItem = document.createElement('div'); userItem.classList.add('user-list-item'); userItem.classList.toggle('offline', !isOnline); const avatarDiv = document.createElement('div'); avatarDiv.classList.add('user-avatar'); avatarDiv.textContent = username.charAt(0)?.toUpperCase() || '?'; avatarDiv.style.backgroundColor = getAvatarColor(username); const nameSpan = document.createElement('span'); nameSpan.classList.add('user-name'); nameSpan.textContent = username; userItem.appendChild(avatarDiv); userItem.appendChild(nameSpan); userItem.addEventListener('click', () => window.electronAPI.getUserProfile(username)); if (isOnline) userListOnlineDiv.appendChild(userItem); else userListOfflineDiv.appendChild(userItem); }); }
+function renderUserList() {
+    const onlineCount = onlineUsers.length;
+    const offlineCount = allUsers.length - onlineCount;
+    userListOnlineDiv.innerHTML = `<h4>Online — <span id="online-count">${onlineCount}</span></h4>`;
+    userListOfflineDiv.innerHTML = `<h4>Offline — <span id="offline-count">${offlineCount < 0 ? 0 : offlineCount}</span></h4>`;
+    const sortedUsers = [...allUsers].sort((a, b) => a.localeCompare(b));
+
+    sortedUsers.forEach(username => {
+        const isOnline = onlineUsers.includes(username);
+        const userItem = document.createElement('div');
+        userItem.classList.add('user-list-item');
+        userItem.classList.toggle('offline', !isOnline);
+        userItem.dataset.username = username; // Store username for context menu
+
+        const avatarDiv = document.createElement('div');
+        avatarDiv.classList.add('user-avatar');
+        avatarDiv.textContent = username.charAt(0)?.toUpperCase() || '?';
+        avatarDiv.style.backgroundColor = getAvatarColor(username);
+
+        const nameSpan = document.createElement('span');
+        nameSpan.classList.add('user-name');
+        nameSpan.textContent = username;
+
+        userItem.appendChild(avatarDiv);
+        userItem.appendChild(nameSpan);
+        userItem.addEventListener('click', () => window.electronAPI.getUserProfile(username));
+
+        // Add context menu listener for admins (not on self)
+        if (isAdmin && username !== localUsername) {
+            userItem.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                window.electronAPI.showUserContextMenu(username);
+            });
+        }
+
+        if (isOnline) userListOnlineDiv.appendChild(userItem);
+        else userListOfflineDiv.appendChild(userItem);
+    });
+}
 
 
 // --- Message Handling ---
@@ -104,20 +142,14 @@ function deleteMessageUI(payload) { /* ... no change ... */ const messageTextDiv
 
 // --- Status Update ---
 function updateStatus(status) {
-    // *** DEBUG LOGGING ADDED ***
-    console.log("Status Update Received:", status);
+    console.log("Status Update:", status);
     let statusText = ''; let serverInfoText = ''; let userInfoText = '';
     if (status.username) localUsername = status.username;
-    if (status.isAdmin !== undefined) {
-        isAdmin = status.isAdmin;
-        console.log(`[Renderer] Admin status updated: ${isAdmin}`); // *** DEBUG LOGGING ADDED ***
-    }
+    if (status.isAdmin !== undefined) isAdmin = status.isAdmin;
     if (status.currentChannel) currentChannel = status.currentChannel;
 
-    // Show/hide party mode button based on admin status
-    partyModeButton.style.display = isAdmin ? 'block' : 'none';
-    console.log(`[Renderer] Party button display: ${partyModeButton.style.display}`); // *** DEBUG LOGGING ADDED ***
-
+    // Remove party mode button logic here, handled by party mode update listener
+    // partyModeButton.style.display = isAdmin ? 'block' : 'none';
 
     if (status.connected) { statusText = 'Online'; serverInfoText = ''; userInfoText = `${localUsername}`; }
     else if (status.wsConnected) { statusText = 'Authenticating...'; serverInfoText = ''; userInfoText = ''; if (authView.style.display === 'none') showAuthView(isLoginMode); }
@@ -142,7 +174,7 @@ sendButton.addEventListener('click', () => { /* ... no change ... */ const text 
 messageInput.addEventListener('keypress', (e) => { /* ... no change ... */ if (e.key === 'Enter' && !e.shiftKey && !messageInput.disabled) { e.preventDefault(); sendButton.click(); } });
 passwordInput.addEventListener('keypress', (e) => { /* ... no change ... */ if (e.key === 'Enter') { if (isLoginMode) loginButton.click(); else signupButton.click(); } });
 messageInput.addEventListener('input', () => { /* ... no change ... */ if (!messageInput.disabled) { window.electronAPI.startTyping(); clearTimeout(typingTimeout); typingTimeout = setTimeout(() => { window.electronAPI.stopTyping(); }, 2500); } });
-partyModeButton.addEventListener('click', () => { /* ... no change ... */ window.electronAPI.togglePartyMode(); });
+// Removed party mode button listener
 
 
 // --- IPC Listeners ---
@@ -161,14 +193,16 @@ window.electronAPI.onMessageEdited((payload) => { updateEditedMessage(payload); 
 window.electronAPI.onMessageDeleted((payload) => { deleteMessageUI(payload); });
 window.electronAPI.onEditMessagePrompt((messageId) => { handleEditMessage(messageId); });
 window.electronAPI.onUserListUpdate((payload) => { /* ... no change ... */ console.log("Received user list update:", payload); allUsers = payload.all || []; onlineUsers = payload.online || []; renderUserList(); });
-window.electronAPI.onPartyModeToggle((payload) => { /* ... no change ... */ partyModeActive = payload.active; document.body.classList.toggle('party-mode', partyModeActive); partyModeButton.classList.toggle('active', partyModeActive); console.log(`Party mode is now ${partyModeActive ? 'ON' : 'OFF'}`); });
 
-window.electronAPI.onTypingUpdate((payload) => {
-    // *** DEBUG LOGGING ADDED ***
-    console.log("Received typing update:", payload);
-    currentlyTypingUsers = payload.typing || [];
-    updateTypingIndicator();
+// Listen for party mode update for THIS client
+window.electronAPI.onPartyModeUpdate((payload) => {
+    partyModeActive = payload.active;
+    document.body.classList.toggle('party-mode', partyModeActive);
+    // partyModeButton.classList.toggle('active', partyModeActive); // Button removed
+    console.log(`Party mode for this client is now ${partyModeActive ? 'ON' : 'OFF'}`);
 });
+
+window.electronAPI.onTypingUpdate((payload) => { /* ... no change ... */ console.log("Received typing update:", payload); currentlyTypingUsers = payload.typing || []; updateTypingIndicator(); });
 
 
 // Request initial status

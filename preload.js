@@ -26,16 +26,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUserListUpdate: (callback) => ipcRenderer.on('user-list-update', (_event, value) => callback(value)),
 
   // Party Mode & Typing
-  togglePartyMode: () => ipcRenderer.send('toggle-party-mode'), // Send toggle request
+  toggleUserPartyMode: (username) => ipcRenderer.send('toggle-user-party-mode', { username }), // Send toggle request for specific user
   startTyping: () => ipcRenderer.send('start-typing'),
   stopTyping: () => ipcRenderer.send('stop-typing'),
-  onPartyModeToggle: (callback) => ipcRenderer.on('party-mode-toggle', (_event, value) => callback(value)), // Listen for toggle state
-  onTypingUpdate: (callback) => ipcRenderer.on('typing-update', (_event, value) => callback(value)), // Listen for typing users
+  onPartyModeUpdate: (callback) => ipcRenderer.on('party-mode-update', (_event, value) => callback(value)), // Listen for own party mode state
+  onTypingUpdate: (callback) => ipcRenderer.on('typing-update', (_event, value) => callback(value)),
 
   // Context Menus
   showChannelContextMenu: (channelName) => ipcRenderer.send('show-channel-context-menu', channelName),
   showSidebarContextMenu: () => ipcRenderer.send('show-sidebar-context-menu'),
   showMessageContextMenu: (messageId, isOwnMessage) => ipcRenderer.send('show-message-context-menu', { messageId, isOwnMessage }),
+  showUserContextMenu: (username) => ipcRenderer.send('show-user-context-menu', { username }), // Context menu for user list items
   onPromptCreateChannel: (callback) => ipcRenderer.on('prompt-create-channel', (_event) => callback()),
   onConfirmDeleteChannel: (callback) => ipcRenderer.on('confirm-delete-channel', (_event, channelName) => callback(channelName)),
   onEditMessagePrompt: (callback) => ipcRenderer.on('edit-message-prompt', (_event, messageId) => callback(messageId)),
@@ -57,8 +58,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('channel-list');
     ipcRenderer.removeAllListeners('user-profile-response');
     ipcRenderer.removeAllListeners('user-list-update');
-    ipcRenderer.removeAllListeners('party-mode-toggle'); // Add cleanup
-    ipcRenderer.removeAllListeners('typing-update'); // Add cleanup
+    ipcRenderer.removeAllListeners('party-mode-update'); // Add cleanup
+    ipcRenderer.removeAllListeners('typing-update');
     ipcRenderer.removeAllListeners('prompt-create-channel');
     ipcRenderer.removeAllListeners('confirm-delete-channel');
     ipcRenderer.removeAllListeners('edit-message-prompt');
@@ -68,4 +69,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
   }
 });
 
-console.log('preload.js updated with party mode listener');
+console.log('preload.js updated for per-user party mode');
