@@ -1,276 +1,201 @@
 /* General Body & Font Styles */
 body {
-    font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; /* Discord font stack */
+    font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
     margin: 0;
     height: 100vh;
-    background-color: #36393f; /* Discord dark background */
-    color: #dcddde; /* Discord light text */
+    background-color: #36393f;
+    color: #dcddde;
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 16px; /* Base font size */
-    overflow: hidden; /* Prevent body scrollbars */
+    font-size: 16px;
+    overflow: hidden;
 }
 
-/* --- Authentication View Styles (Dark Mode) --- */
+/* --- Authentication View Styles --- */
 #auth-view {
     width: 100%;
     max-width: 450px;
     padding: 40px;
-    background-color: #36393f; /* Match body */
+    background-color: #36393f;
     border-radius: 8px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    /* display: block; Initially visible */
 }
-
-.auth-container h2 {
-    text-align: center;
-    margin-bottom: 25px;
-    color: #fff; /* White title */
-    font-weight: 600;
-}
-
-.input-group {
-    margin-bottom: 20px;
-}
-
-.input-group label {
-    display: block;
-    margin-bottom: 8px;
-    font-weight: 600;
-    color: #b9bbbe; /* Discord grey label */
-    font-size: 0.8em;
-    text-transform: uppercase;
-}
-
-.input-group input {
-    width: 100%;
-    padding: 12px;
-    border: 1px solid #202225; /* Darker border */
-    background-color: #202225; /* Dark input background */
-    color: #dcddde; /* Light text */
-    border-radius: 4px;
-    box-sizing: border-box;
-    font-size: 1em;
-}
-.input-group input:focus {
-    outline: none;
-    border-color: #7289da; /* Discord blurple focus */
-}
-
-.auth-button {
-    width: 100%;
-    padding: 12px;
-    background-color: #5865f2; /* Discord blurple button */
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 1em;
-    font-weight: 500;
-    margin-top: 15px;
-    transition: background-color 0.17s ease;
-}
-
-.auth-button:hover {
-    background-color: #4752c4; /* Darker blurple */
-}
-
-#signup-button {
-    background-color: #4f545c; /* Discord grey button */
-}
-#signup-button:hover {
-    background-color: #5d6269;
-}
-
-#toggle-auth-message {
-    text-align: center;
-    margin-top: 20px;
-    font-size: 0.9em;
-    color: #72767d; /* Lighter grey */
-}
-
-#toggle-auth-message a {
-    color: #00a8fc; /* Discord link blue */
-    text-decoration: none;
-    cursor: pointer;
-}
-
-#toggle-auth-message a:hover {
-    text-decoration: underline;
-}
-
-.error-message {
-    color: #f04747; /* Discord red */
-    /* background-color: rgba(240, 71, 71, 0.1); */ /* Optional subtle background */
-    /* border: 1px solid rgba(240, 71, 71, 0.3); */
-    padding: 10px 0; /* Padding top/bottom only */
-    border-radius: 4px;
-    margin-bottom: 15px;
-    text-align: center;
-    font-size: 0.9em;
-    display: none;
-}
+/* ... (rest of auth styles remain the same) ... */
+.auth-container h2 { text-align: center; margin-bottom: 25px; color: #fff; font-weight: 600; }
+.input-group { margin-bottom: 20px; }
+.input-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #b9bbbe; font-size: 0.8em; text-transform: uppercase; }
+.input-group input { width: 100%; padding: 12px; border: 1px solid #202225; background-color: #202225; color: #dcddde; border-radius: 4px; box-sizing: border-box; font-size: 1em; }
+.input-group input:focus { outline: none; border-color: #7289da; }
+.auth-button { width: 100%; padding: 12px; background-color: #5865f2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; font-weight: 500; margin-top: 15px; transition: background-color 0.17s ease; }
+.auth-button:hover { background-color: #4752c4; }
+#signup-button { background-color: #4f545c; }
+#signup-button:hover { background-color: #5d6269; }
+#toggle-auth-message { text-align: center; margin-top: 20px; font-size: 0.9em; color: #72767d; }
+#toggle-auth-message a { color: #00a8fc; text-decoration: none; cursor: pointer; }
+#toggle-auth-message a:hover { text-decoration: underline; }
+.error-message { color: #f04747; padding: 10px 0; border-radius: 4px; margin-bottom: 15px; text-align: center; font-size: 0.9em; display: none; }
 
 
-/* --- Chat View Styles (Dark Mode) --- */
+/* --- Chat View Layout --- */
 #chat-view {
+    display: flex; /* Use flex for sidebar + main content */
     width: 100%;
-    max-width: none;
     height: 100vh;
-    background-color: #36393f; /* Dark background */
-    display: flex;
-    flex-direction: column;
+    max-width: none;
+    background-color: #36393f;
     padding: 0;
     box-shadow: none;
     border-radius: 0;
+    /* display: none; Initially hidden */
 }
 
+/* Sidebar Styles */
+#sidebar {
+    width: 240px; /* Fixed width for sidebar */
+    background-color: #2f3136; /* Discord sidebar color */
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0; /* Prevent sidebar from shrinking */
+}
+
+#server-header {
+    padding: 12px 16px;
+    font-weight: 600;
+    color: #fff;
+    border-bottom: 1px solid #202225; /* Separator */
+    flex-shrink: 0;
+    height: 48px; /* Match Discord header height */
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+}
+
+#channel-list {
+    flex-grow: 1; /* Take remaining vertical space */
+    overflow-y: auto; /* Allow scrolling for channels */
+    padding: 10px 8px; /* Padding around channel items */
+}
+
+.channel-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    margin-bottom: 2px;
+    border-radius: 4px;
+    color: #8e9297; /* Default channel color */
+    cursor: pointer;
+    font-weight: 500;
+    text-decoration: none; /* Remove underline from links */
+}
+.channel-item::before { /* Hash symbol */
+    content: "#";
+    margin-right: 6px;
+    font-weight: 600;
+    color: #72767d;
+}
+
+.channel-item:hover {
+    background-color: #3a3c43; /* Hover background */
+    color: #dcddde; /* Lighter text on hover */
+}
+.channel-item:hover::before {
+    color: #b9bbbe;
+}
+
+.channel-item.active { /* Style for the currently selected channel */
+    background-color: #40444b;
+    color: #fff; /* White text for active */
+}
+.channel-item.active::before {
+    color: #fff;
+}
+
+
+#user-area {
+    padding: 10px 16px;
+    background-color: #292b2f; /* Darker user area background */
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+}
+
+#user-info {
+    font-weight: 500;
+    color: #fff;
+    margin-left: 0; /* Reset margin */
+    /* Add ellipsis for long names if needed */
+    /* white-space: nowrap; */
+    /* overflow: hidden; */
+    /* text-overflow: ellipsis; */
+}
+/* Remove ::before from status bar */
+/* #user-info::before { ... } */
+
+
+/* Main Content Area Styles */
+#main-content {
+    flex-grow: 1; /* Take remaining horizontal space */
+    display: flex;
+    flex-direction: column;
+    background-color: #36393f; /* Match background */
+    height: 100vh; /* Ensure it takes full height */
+}
+
+
 #status-bar {
-    padding: 8px 15px;
-    background-color: #2f3136; /* Slightly lighter dark */
-    border-bottom: 1px solid #202225; /* Darker border */
+    padding: 0 20px; /* Match message padding */
+    background-color: #36393f; /* Match main background */
+    border-bottom: 1px solid #2b2d31; /* Darker separator */
     font-size: 0.85em;
     display: flex;
     align-items: center;
     gap: 15px;
     flex-shrink: 0;
-    color: #b9bbbe; /* Grey text */
+    color: #b9bbbe;
+    height: 48px; /* Match sidebar header height */
+    box-sizing: border-box;
 }
-
-#connection-status {
-    font-weight: 500;
+#current-channel-name { /* Style for channel name in status bar */
+    font-weight: 600;
+    color: #fff;
 }
-
-#host-info, #user-info {
-    font-style: normal; /* Remove italic */
-    color: #72767d; /* Lighter grey */
-}
-#user-info {
-    margin-left: auto;
-    font-weight: 500;
-    color: #fff; /* White username */
-}
-#user-info::before {
-    content: "Logged in as: ";
+#current-channel-name::before {
+    content: "#";
+    margin-right: 4px;
     color: #72767d;
     font-weight: normal;
 }
+
+#connection-status { font-weight: 500; margin-left: auto; } /* Move connection status right */
+#host-info { display: none; } /* Hide server URL for cleaner look */
 
 
 #messages {
     flex-grow: 1;
     overflow-y: auto;
-    padding: 0 20px 10px 20px; /* Padding left/right */
-    background-color: #36393f; /* Match background */
-    border-bottom: none; /* Remove border */
-    display: flex;
-    flex-direction: column; /* Stack messages */
-}
-
-/* Message Grouping (Basic - real Discord groups by time/user) */
-.message {
-    display: flex; /* Use flex for avatar + content */
-    align-items: flex-start; /* Align avatar top */
-    padding: 8px 0; /* Vertical padding */
-    margin-top: 5px; /* Space between messages */
-    /* Remove bubble styles */
-    /* background-color: transparent; */
-    /* border-radius: 0; */
-    /* max-width: 100%; */
-    /* margin-left: 0; */
-    /* margin-right: 0; */
-}
-
-.message-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background-color: #7289da; /* Default avatar color */
-    color: #fff;
-    font-weight: 500;
-    font-size: 1.2em;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 15px;
-    flex-shrink: 0; /* Prevent avatar shrinking */
-    text-transform: uppercase;
-}
-
-.message-content {
+    padding: 0 20px 10px 20px;
+    background-color: #36393f;
+    border-bottom: none;
     display: flex;
     flex-direction: column;
 }
 
-.message-header {
-    display: flex;
-    align-items: baseline; /* Align username and timestamp */
-    margin-bottom: 3px;
-}
-
-.message .sender {
-    font-weight: 500; /* Medium weight */
-    color: #fff; /* White sender name */
-    margin-right: 8px;
-    font-size: 1em; /* Match base font size */
-}
-
-.message .timestamp {
-    font-size: 0.75em; /* Smaller timestamp */
-    color: #72767d; /* Grey timestamp */
-    /* Remove float */
-    /* margin-left: 0; */
-}
-
-.message-text {
-    line-height: 1.375; /* Discord line height */
-    color: #dcddde; /* Standard text color */
-    word-wrap: break-word;
-    white-space: pre-wrap; /* Preserve whitespace/newlines */
-}
-
-/* Remove specific local/remote styling */
-/* .message-local { ... } */
-/* .message-remote { ... } */
+/* Message Styles (Mostly unchanged) */
+.message { display: flex; align-items: flex-start; padding: 8px 0; margin-top: 5px; }
+.message-avatar { width: 40px; height: 40px; border-radius: 50%; background-color: #7289da; color: #fff; font-weight: 500; font-size: 1.2em; display: flex; align-items: center; justify-content: center; margin-right: 15px; flex-shrink: 0; text-transform: uppercase; }
+.message-content { display: flex; flex-direction: column; }
+.message-header { display: flex; align-items: baseline; margin-bottom: 3px; }
+.message .sender { font-weight: 500; color: #fff; margin-right: 8px; font-size: 1em; }
+.message .timestamp { font-size: 0.75em; color: #72767d; }
+.message-text { line-height: 1.375; color: #dcddde; word-wrap: break-word; white-space: pre-wrap; }
 
 
-/* Input Area Styles */
-#input-area {
-    display: flex;
-    padding: 0 20px 20px 20px; /* Padding around input */
-    background-color: #36393f; /* Match background */
-    flex-shrink: 0;
-    border-top: 1px solid #40444b; /* Separator line */
-    margin-top: 8px; /* Space above input area */
-}
-
-#message-input {
-    flex-grow: 1;
-    padding: 11px 10px;
-    border: none;
-    border-radius: 8px;
-    margin-right: 0; /* Remove margin */
-    background-color: #40444b; /* Darker input background */
-    color: #dcddde;
-    font-size: 1em;
-    line-height: 1.375;
-    resize: none; /* Prevent manual resize */
-}
-#message-input:focus {
-    outline: none;
-}
-#message-input::placeholder {
-    color: #72767d;
-}
-
-
-#send-button {
-    display: none; /* Hide default send button, rely on Enter key */
-}
-
-#send-button:disabled,
-#message-input:disabled {
-     background-color: #40444b;
-     cursor: not-allowed;
-     opacity: 0.7;
-}
+/* Input Area Styles (Mostly unchanged) */
+#input-area { display: flex; padding: 0 20px 20px 20px; background-color: #36393f; flex-shrink: 0; border-top: none; margin-top: 8px; }
+#message-input { flex-grow: 1; padding: 11px 10px; border: none; border-radius: 8px; margin-right: 0; background-color: #40444b; color: #dcddde; font-size: 1em; line-height: 1.375; resize: none; }
+#message-input:focus { outline: none; }
+#message-input::placeholder { color: #72767d; }
+#send-button { display: none; }
+#send-button:disabled, #message-input:disabled { background-color: #40444b; cursor: not-allowed; opacity: 0.7; }

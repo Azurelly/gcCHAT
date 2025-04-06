@@ -11,8 +11,9 @@ const SERVER_URL = 'wss://gcchat.onrender.com';
 let mainWindow = null;
 let serverAddress = SERVER_URL;
 let clientSocket = null;
-let messageHistory = [];
-let loggedInUsername = null; // Store logged-in user
+// let messageHistory = []; // History is now per-channel, managed by server/renderer
+let loggedInUsername = null;
+let currentChannel = null; // Track current channel locally
 
 // --- Utility Functions ---
 const __filename = fileURLToPath(import.meta.url);
@@ -36,9 +37,6 @@ function connectToServer() {
 
   clientSocket.on('open', () => {
     console.log('[Client] Connected to server');
-    // Don't send status update immediately, wait for potential login
-    // mainWindow?.webContents.send('status-update', { connected: true, serverIp: serverAddress, localHostname: os.hostname() });
-    // Instead, maybe just indicate connection is open, UI waits for login response
      mainWindow?.webContents.send('status-update', { wsConnected: true, serverIp: serverAddress, localHostname: os.hostname() });
   });
 
@@ -47,31 +45,30 @@ function connectToServer() {
         const parsedMessage = JSON.parse(message);
         // Route message to renderer based on type
         switch(parsedMessage.type) {
-            case 'history':
-                messageHistory = parsedMessage.payload || [];
-                mainWindow?.webContents.send('load-history', messageHistory);
+            case 'history': // Now includes channel info
+                // messageHistory = parsedMessage.payload || []; // Don't store globally
+                mainWindow?.webContents.send('load-history', parsedMessage); // Forward { channel, payload }
                 break;
-            case 'chat':
-                // Add to local history only if needed (server sends history on login)
-                // if (!messageHistory.some(m => m.id === parsedMessage.id && m.timestamp === parsedMessage.timestamp)) {
-                //      messageHistory.push(parsedMessage);
-                // }
-                mainWindow?.webContents.send('message-received', parsedMessage);
+            case 'chat': // Now includes channel info
+                mainWindow?.webContents.send('message-received', parsedMessage); // Forward { type, channel, text, sender, timestamp }
                 break;
             case 'login-response':
                 if (parsedMessage.success) {
-                    loggedInUsername = parsedMessage.username; // Store username on successful login
+                    loggedInUsername = parsedMessage.username;
+                    currentChannel = 'general'; // Assume default channel on login
                     console.log(`[Client] Login successful for ${loggedInUsername}`);
                 } else {
                     loggedInUsername = null;
+                    currentChannel = null;
                 }
-                // Forward the whole response to renderer
                 mainWindow?.webContents.send('login-response', parsedMessage);
                 break;
             case 'signup-response':
-                // Forward response to renderer
                 mainWindow?.webContents.send('signup-response', parsedMessage);
                 break;
+            case 'channel-list': // Handle channel list from server
+                 mainWindow?.webContents.send('channel-list', parsedMessage); // Forward { payload: [channelName] }
+                 break;
             default:
                 console.warn(`[Client] Received unhandled message type: ${parsedMessage.type}`);
         }
@@ -83,7 +80,8 @@ function connectToServer() {
   clientSocket.on('close', (code, reason) => {
     console.log(`[Client] Disconnected from server. Code: ${code}, Reason: ${reason.toString()}. Retrying connection...`);
     clientSocket = null;
-    loggedInUsername = null; // Reset login status
+    loggedInUsername = null;
+    currentChannel = null;
     mainWindow?.webContents.send('status-update', { connected: false, wsConnected: false, error: 'Disconnected. Retrying...', serverIp: serverAddress, localHostname: os.hostname() });
     setTimeout(connectToServer, 5000);
   });
@@ -91,15 +89,14 @@ function connectToServer() {
   clientSocket.on('error', (error) => {
     console.error('[Client] WebSocket Client Error:', error.message);
     mainWindow?.webContents.send('status-update', { connected: false, wsConnected: false, error: `Connection error: ${error.message}. Retrying...`, serverIp: serverAddress, localHostname: os.hostname() });
-    // Close event will handle reconnect
   });
 }
 
 // --- Electron App Lifecycle ---
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1000, // Wider for channels panel
+    height: 700,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -113,7 +110,7 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 
   mainWindow.webContents.once('did-finish-load', () => {
-    connectToServer(); // Connect WebSocket on load
+    connectToServer();
   });
 }
 
@@ -132,55 +129,60 @@ app.on('quit', () => {
 });
 
 // --- IPC Handlers ---
-
-// Helper to send messages via WebSocket if connected
 function sendToServer(messageObject) {
     if (clientSocket && clientSocket.readyState === WebSocket.OPEN) {
         clientSocket.send(JSON.stringify(messageObject));
         return true;
     } else {
         console.log('[Client] Cannot send message: Not connected to server.');
-        // Optionally inform renderer? Depends on context.
-        // mainWindow?.webContents.send('send-error', 'Not connected to chat server.');
         return false;
     }
 }
 
-// Signup Request
 ipcMain.on('signup-request', (event, credentials) => {
     console.log('[IPC] Received signup request');
     sendToServer({ type: 'signup', ...credentials });
-    // Response is handled by the 'message' listener forwarding 'signup-response'
 });
 
-// Login Request
 ipcMain.on('login-request', (event, credentials) => {
     console.log('[IPC] Received login request');
     sendToServer({ type: 'login', ...credentials });
-    // Response is handled by the 'message' listener forwarding 'login-response'
 });
 
-// Chat Message Request
 ipcMain.on('send-message', (event, messageText) => {
-    // No change needed here, server uses associated username from login
-    if (loggedInUsername) { // Only send if logged in
-         console.log('[IPC] Received chat message request');
+    if (loggedInUsername && currentChannel) { // Check channel too
+         console.log(`[IPC] Received chat message request for channel ${currentChannel}`);
+         // Server determines channel based on connection map, no need to send it from client?
+         // Let's keep it simple: server uses the channel associated with the connection.
          sendToServer({ type: 'chat', text: messageText });
     } else {
-         console.warn('[IPC] Attempted to send chat message while not logged in.');
+         console.warn('[IPC] Attempted to send chat message while not logged in or no channel selected.');
          mainWindow?.webContents.send('send-error', 'You must be logged in to send messages.');
     }
 });
 
-// Status Request
+// Handle channel switch request from renderer
+ipcMain.on('switch-channel', (event, channelName) => {
+    if (loggedInUsername) {
+        console.log(`[IPC] Received switch channel request to ${channelName}`);
+        if (sendToServer({ type: 'switch-channel', channel: channelName })) {
+            currentChannel = channelName; // Update local state optimistically
+        }
+    } else {
+        console.warn('[IPC] Attempted to switch channel while not logged in.');
+    }
+});
+
+
 ipcMain.on('request-status', (event) => {
     event.reply('status-update', {
-        connected: !!loggedInUsername, // Consider 'connected' as 'logged in' now
-        wsConnected: clientSocket && clientSocket.readyState === WebSocket.OPEN, // Actual socket state
+        connected: !!loggedInUsername,
+        wsConnected: clientSocket && clientSocket.readyState === WebSocket.OPEN,
         connecting: clientSocket && clientSocket.readyState === WebSocket.CONNECTING,
         searching: false,
         serverIp: serverAddress,
         localHostname: os.hostname(),
-        username: loggedInUsername // Send username if logged in
+        username: loggedInUsername,
+        currentChannel: currentChannel // Include current channel in status
     });
 });

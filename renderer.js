@@ -12,16 +12,22 @@ const authErrorDiv = document.getElementById('auth-error');
 
 // Chat View
 const chatView = document.getElementById('chat-view');
+const sidebar = document.getElementById('sidebar'); // Added sidebar
+const channelListDiv = document.getElementById('channel-list'); // Added channel list container
+const mainContent = document.getElementById('main-content'); // Added main content area
 const messagesDiv = document.getElementById('messages');
 const messageInput = document.getElementById('message-input');
-const sendButton = document.getElementById('send-button'); // Still exists, just hidden by CSS
+const sendButton = document.getElementById('send-button');
 const connectionStatusSpan = document.getElementById('connection-status');
+const currentChannelSpan = document.getElementById('current-channel-name'); // Added current channel display
 const hostInfoSpan = document.getElementById('host-info'); // Server URL
-const userInfoSpan = document.getElementById('user-info'); // Logged in user
+const userInfoSpan = document.getElementById('user-info'); // Logged in user (in sidebar)
 
 // --- State ---
 let localUsername = '';
 let isLoginMode = true;
+let currentChannel = 'general'; // Track currently viewed channel
+let availableChannels = ['general']; // Store available channels
 
 // --- UI Switching ---
 function showAuthView(showLogin = true) {
@@ -34,7 +40,7 @@ function showAuthView(showLogin = true) {
         : `Already have an account? <a href="#" id="toggle-login">Login here</a>.`;
     attachToggleListeners();
     authView.style.display = 'block';
-    chatView.style.display = 'none';
+    chatView.style.display = 'none'; // Hide chat view
     document.body.style.justifyContent = 'center';
     document.body.style.alignItems = 'center';
     hideAuthError();
@@ -42,12 +48,13 @@ function showAuthView(showLogin = true) {
 
 function showChatView() {
     authView.style.display = 'none';
-    chatView.style.display = 'flex';
+    chatView.style.display = 'flex'; // Show chat view (flex layout)
     document.body.style.justifyContent = 'flex-start';
     document.body.style.alignItems = 'stretch';
     messageInput.disabled = false;
-    sendButton.disabled = false; // Enable hidden button too
+    sendButton.disabled = false;
     messageInput.focus();
+    updateChannelHighlight(); // Highlight the current channel
 }
 
 function showAuthError(message) {
@@ -61,75 +68,84 @@ function hideAuthError() {
 }
 
 
-// --- Helper Functions ---
-// Simple hash function for consistent avatar colors (optional)
-function simpleHash(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        const char = str.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash |= 0; // Convert to 32bit integer
-    }
-    return Math.abs(hash);
+// --- Channel UI ---
+function renderChannelList() {
+    channelListDiv.innerHTML = ''; // Clear existing list
+    availableChannels.forEach(channelName => {
+        const channelLink = document.createElement('a');
+        channelLink.href = '#';
+        channelLink.classList.add('channel-item');
+        channelLink.dataset.channel = channelName; // Store channel name in data attribute
+        channelLink.textContent = channelName;
+
+        channelLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (channelName !== currentChannel) {
+                console.log(`Requesting switch to channel: ${channelName}`);
+                window.electronAPI.switchChannel(channelName);
+                // History will be loaded via IPC response
+            }
+        });
+
+        channelListDiv.appendChild(channelLink);
+    });
+    updateChannelHighlight(); // Update highlight after rendering
 }
 
-// Generate a color based on username hash (optional)
-function getAvatarColor(username) {
-    const colors = ['#7289da', '#43b581', '#faa61a', '#f04747', '#1abc9c', '#e91e63', '#f1c40f'];
-    const hash = simpleHash(username || 'default');
-    return colors[hash % colors.length];
+function updateChannelHighlight() {
+    document.querySelectorAll('.channel-item').forEach(item => {
+        if (item.dataset.channel === currentChannel) {
+            item.classList.add('active');
+        } else {
+            item.classList.remove('active');
+        }
+    });
+    // Update status bar channel name
+    currentChannelSpan.textContent = currentChannel;
+    // Update message input placeholder
+    messageInput.placeholder = `Message #${currentChannel}`;
 }
 
 
+// --- Message Handling ---
 function addMessage(messageData) {
+    // Only display messages for the currently viewed channel
+    if (messageData.channel !== currentChannel) {
+        // console.log(`Ignoring message for channel ${messageData.channel}, current is ${currentChannel}`);
+        return;
+    }
+
     const messageContainer = document.createElement('div');
     messageContainer.classList.add('message');
-
+    // ... (rest of addMessage logic remains the same) ...
     const sender = messageData.sender || 'Unknown';
     const firstLetter = sender.charAt(0) || '?';
-
-    // Avatar Div
     const avatarDiv = document.createElement('div');
     avatarDiv.classList.add('message-avatar');
     avatarDiv.textContent = firstLetter;
-    avatarDiv.style.backgroundColor = getAvatarColor(sender); // Assign color based on username
-
-    // Content Div
+    avatarDiv.style.backgroundColor = getAvatarColor(sender);
     const contentDiv = document.createElement('div');
     contentDiv.classList.add('message-content');
-
-    // Header Div (Sender + Timestamp)
     const headerDiv = document.createElement('div');
     headerDiv.classList.add('message-header');
-
     const senderSpan = document.createElement('span');
     senderSpan.classList.add('sender');
-    senderSpan.textContent = sender; // Display full username
-
+    senderSpan.textContent = sender;
     const timestampSpan = document.createElement('span');
     timestampSpan.classList.add('timestamp');
-    timestampSpan.textContent = messageData.timestamp ? new Date(messageData.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''; // Format time
-
+    timestampSpan.textContent = messageData.timestamp ? new Date(messageData.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
     headerDiv.appendChild(senderSpan);
     headerDiv.appendChild(timestampSpan);
-
-    // Text Div
     const textDiv = document.createElement('div');
     textDiv.classList.add('message-text');
-    textDiv.textContent = messageData.text; // Use textContent to prevent HTML injection
-
-    // Assemble Content
+    textDiv.textContent = messageData.text;
     contentDiv.appendChild(headerDiv);
     contentDiv.appendChild(textDiv);
-
-    // Assemble Message
     messageContainer.appendChild(avatarDiv);
     messageContainer.appendChild(contentDiv);
-
     messagesDiv.appendChild(messageContainer);
 
-    // Scroll to bottom
-    const isScrolledToBottom = messagesDiv.scrollHeight - messagesDiv.clientHeight <= messagesDiv.scrollTop + 5; // Add tolerance
+    const isScrolledToBottom = messagesDiv.scrollHeight - messagesDiv.clientHeight <= messagesDiv.scrollTop + 5;
     if (isScrolledToBottom) {
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
@@ -139,29 +155,28 @@ function clearMessages() {
     messagesDiv.innerHTML = '';
 }
 
+// --- Status Update ---
 function updateStatus(status) {
     console.log("Status Update:", status);
     let statusText = '';
     let serverInfoText = '';
     let userInfoText = '';
 
-    if (status.username) {
-         localUsername = status.username; // Keep track of own username
-    }
+    if (status.username) localUsername = status.username;
+    if (status.currentChannel) currentChannel = status.currentChannel; // Update current channel from status
 
-    if (status.connected) {
+    if (status.connected) { // Logged in
         statusText = 'Online';
-        serverInfoText = `(Server: ${status.serverIp})`;
-        userInfoText = `${localUsername}`; // Just show username
-        // Don't call showChatView here - let login response handle it
-    } else if (status.wsConnected) {
-        statusText = 'Connected (Not Logged In)';
-        serverInfoText = `(Server: ${status.serverIp})`;
+        serverInfoText = ''; // Hide server URL in status bar
+        userInfoText = `${localUsername}`;
+    } else if (status.wsConnected) { // Socket connected, not logged in
+        statusText = 'Authenticating...';
+        serverInfoText = '';
         userInfoText = '';
         if (authView.style.display === 'none') showAuthView(isLoginMode);
     } else if (status.connecting) {
-        statusText = `Connecting...`; // Simpler connecting message
-        serverInfoText = `(Server: ${status.serverIp})`;
+        statusText = `Connecting...`;
+        serverInfoText = '';
         userInfoText = '';
         if (authView.style.display === 'none') showAuthView(isLoginMode);
     } else if (status.error) {
@@ -169,153 +184,122 @@ function updateStatus(status) {
         serverInfoText = '';
         userInfoText = '';
          if (authView.style.display === 'none') showAuthView(isLoginMode);
-    } else {
+    } else { // Disconnected
         statusText = 'Disconnected';
-        serverInfoText = `(Server: ${status.serverIp})`;
+        serverInfoText = '';
         userInfoText = '';
          if (authView.style.display === 'none') showAuthView(isLoginMode);
     }
 
     connectionStatusSpan.textContent = statusText;
-    hostInfoSpan.textContent = serverInfoText;
-    userInfoSpan.textContent = userInfoText; // Update user info span
+    hostInfoSpan.textContent = serverInfoText; // Server URL hidden via CSS now
+    userInfoSpan.textContent = userInfoText;
+    currentChannelSpan.textContent = currentChannel || '...'; // Show current channel
 
-    const isLoggedIn = !!localUsername; // Base disabled state on localUsername
+    const isLoggedIn = !!localUsername;
     messageInput.disabled = !isLoggedIn;
     sendButton.disabled = !isLoggedIn;
+    if (isLoggedIn) updateChannelHighlight(); // Ensure highlight is correct on status update
 }
 
 
 // --- Event Listeners ---
-loginButton.addEventListener('click', () => {
+loginButton.addEventListener('click', () => { /* ... no change ... */
     const username = usernameInput.value.trim();
     const password = passwordInput.value.trim();
-    if (username && password) {
-        hideAuthError();
-        window.electronAPI.sendLogin({ username, password });
-    } else {
-        showAuthError('Please enter both username and password.');
-    }
+    if (username && password) { hideAuthError(); window.electronAPI.sendLogin({ username, password }); }
+    else { showAuthError('Please enter both username and password.'); }
 });
-
-signupButton.addEventListener('click', () => {
+signupButton.addEventListener('click', () => { /* ... no change ... */
     const username = usernameInput.value.trim();
     const password = passwordInput.value.trim();
-    if (username && password) {
-        hideAuthError();
-        window.electronAPI.sendSignup({ username, password });
-    } else {
-        showAuthError('Please enter both username and password.');
-    }
+    if (username && password) { hideAuthError(); window.electronAPI.sendSignup({ username, password }); }
+    else { showAuthError('Please enter both username and password.'); }
 });
-
-function attachToggleListeners() {
+function attachToggleListeners() { /* ... no change ... */
     const signupLink = document.getElementById('toggle-signup');
     const loginLink = document.getElementById('toggle-login');
-    if (signupLink) {
-        signupLink.addEventListener('click', (e) => { e.preventDefault(); showAuthView(false); });
-    }
-    if (loginLink) {
-        loginLink.addEventListener('click', (e) => { e.preventDefault(); showAuthView(true); });
-    }
+    if (signupLink) signupLink.addEventListener('click', (e) => { e.preventDefault(); showAuthView(false); });
+    if (loginLink) loginLink.addEventListener('click', (e) => { e.preventDefault(); showAuthView(true); });
 }
 attachToggleListeners();
-
-
-sendButton.addEventListener('click', () => { // Still needed for Enter key fallback
+sendButton.addEventListener('click', () => { /* ... no change ... */
     const text = messageInput.value.trim();
-    if (text && !messageInput.disabled) {
-        window.electronAPI.sendMessage(text);
-        messageInput.value = '';
-    }
+    if (text && !messageInput.disabled) { window.electronAPI.sendMessage(text); messageInput.value = ''; }
 });
-
-messageInput.addEventListener('keypress', (e) => {
-    // Send on Enter, but not Shift+Enter
-    if (e.key === 'Enter' && !e.shiftKey && !messageInput.disabled) {
-        e.preventDefault(); // Prevent newline in input
-        sendButton.click(); // Trigger send logic
-    }
+messageInput.addEventListener('keypress', (e) => { /* ... no change ... */
+    if (e.key === 'Enter' && !e.shiftKey && !messageInput.disabled) { e.preventDefault(); sendButton.click(); }
 });
-
-passwordInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        if (isLoginMode) loginButton.click();
-        else signupButton.click();
-    }
+passwordInput.addEventListener('keypress', (e) => { /* ... no change ... */
+    if (e.key === 'Enter') { if (isLoginMode) loginButton.click(); else signupButton.click(); }
 });
 
 
 // --- IPC Listeners ---
-window.electronAPI.onSignupResponse(response => {
+window.electronAPI.onSignupResponse(response => { /* ... no change ... */
     console.log('Signup Response:', response);
-    if (response.success) {
-        showAuthView(true);
-        alert('Signup successful! Please log in.');
-    } else {
-        showAuthError(response.error || 'Signup failed.');
-    }
+    if (response.success) { showAuthView(true); alert('Signup successful! Please log in.'); }
+    else { showAuthError(response.error || 'Signup failed.'); }
 });
 
 window.electronAPI.onLoginResponse(response => {
     console.log('Login Response:', response);
     if (response.success) {
-        localUsername = response.username; // Store username
+        localUsername = response.username;
+        currentChannel = 'general'; // Assume default channel initially
         hideAuthError();
-        showChatView();
-        userInfoSpan.textContent = `${localUsername}`; // Update user info immediately
+        showChatView(); // Switch view
+        userInfoSpan.textContent = `${localUsername}`;
         connectionStatusSpan.textContent = 'Online';
+        // Channel list and history are loaded via separate messages now
     } else {
         showAuthError(response.error || 'Login failed.');
     }
 });
 
+// Handle channel list from server
+window.electronAPI.onChannelList(response => {
+    console.log('Channel List:', response.payload);
+    availableChannels = response.payload || ['general'];
+    renderChannelList(); // Render the list in the sidebar
+});
 
+// Handle incoming messages (now includes channel)
 window.electronAPI.onMessageReceived((messageData) => {
-    addMessage(messageData);
+    addMessage(messageData); // addMessage now filters by currentChannel
 });
 
-window.electronAPI.onLoadHistory((history) => {
-    console.log('Renderer loading history:', history);
-    clearMessages();
-    history.forEach(msg => addMessage(msg));
-    // Scroll to bottom after loading history
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+// Handle history loading (now includes channel)
+window.electronAPI.onLoadHistory((data) => {
+    console.log(`Loading history for channel: ${data.channel}`);
+    // Only clear and load if the history is for the currently viewed channel
+    if (data.channel === currentChannel) {
+        clearMessages();
+        data.payload.forEach(msg => addMessage(msg));
+        messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll down after loading
+    }
+    // Update current channel state and UI highlight (in case switch was initiated)
+    currentChannel = data.channel;
+    updateChannelHighlight();
 });
 
-window.electronAPI.onStatusUpdate((status) => {
-    updateStatus(status);
-});
-
-window.electronAPI.onSendError((errorMsg) => {
+window.electronAPI.onStatusUpdate((status) => { updateStatus(status); });
+window.electronAPI.onSendError((errorMsg) => { /* ... no change ... */
     console.error('Send Error:', errorMsg);
     if (chatView.style.display !== 'none') {
-        const errorDiv = document.createElement('div');
-        errorDiv.style.color = '#f04747'; // Use Discord red
-        errorDiv.style.fontStyle = 'italic';
-        errorDiv.style.padding = '5px 20px'; // Match message padding
-        errorDiv.textContent = `Error: ${errorMsg}`;
-        messagesDiv.appendChild(errorDiv);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        setTimeout(() => {
-            if (errorDiv.parentNode === messagesDiv) {
-                messagesDiv.removeChild(errorDiv);
-            }
-        }, 5000);
-    } else {
-        showAuthError(`Send Error: ${errorMsg}`);
-    }
+        const errorDiv = document.createElement('div'); errorDiv.style.color = '#f04747'; errorDiv.style.fontStyle = 'italic'; errorDiv.style.padding = '5px 20px'; errorDiv.textContent = `Error: ${errorMsg}`; messagesDiv.appendChild(errorDiv); messagesDiv.scrollTop = messagesDiv.scrollHeight; setTimeout(() => { if (errorDiv.parentNode === messagesDiv) messagesDiv.removeChild(errorDiv); }, 5000);
+    } else { showAuthError(`Send Error: ${errorMsg}`); }
 });
 
 // Request initial status
 window.electronAPI.requestStatus();
-
 // Clean up listeners
-window.addEventListener('beforeunload', () => {
-    window.electronAPI.cleanupListeners();
-});
-
+window.addEventListener('beforeunload', () => { window.electronAPI.cleanupListeners(); });
 // Initialize view
 showAuthView(true);
 
-console.log('renderer.js loaded with Discord UI logic');
+console.log('renderer.js loaded with channel logic');
+
+// --- Utility Functions (Avatar Color) ---
+function simpleHash(str) { let hash = 0; for (let i = 0; i < str.length; i++) { const char = str.charCodeAt(i); hash = ((hash << 5) - hash) + char; hash |= 0; } return Math.abs(hash); }
+function getAvatarColor(username) { const colors = ['#7289da', '#43b581', '#faa61a', '#f04747', '#1abc9c', '#e91e63', '#f1c40f']; const hash = simpleHash(username || 'default'); return colors[hash % colors.length]; }

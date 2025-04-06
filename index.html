@@ -11,8 +11,7 @@
     <div id="auth-view">
         <div class="auth-container">
             <h2 id="auth-title">Login</h2>
-            <div id="auth-error" class="error-message"></div> <!-- Area for auth errors -->
-
+            <div id="auth-error" class="error-message"></div>
             <div class="input-group">
                 <label for="username">Username:</label>
                 <input type="text" id="username" name="username" required>
@@ -21,29 +20,40 @@
                 <label for="password">Password:</label>
                 <input type="password" id="password" name="password" required>
             </div>
-
             <button id="login-button" class="auth-button">Login</button>
             <button id="signup-button" class="auth-button">Sign Up</button>
-
             <p id="toggle-auth-message">Don't have an account? <a href="#" id="toggle-signup">Sign up here</a>.</p>
         </div>
     </div>
 
     <!-- Chat View (Initially Hidden) -->
-    <div id="chat-view" style="display: none; height: 100vh; display: flex; flex-direction: column;">
-        <div id="status-bar">
-            Status: <span id="connection-status">Initializing...</span>
-            <span id="host-info"></span> <!-- Will show Server URL -->
-            <span id="user-info"></span> <!-- Will show logged in user -->
+    <div id="chat-view" style="display: none;"> <!-- Removed inline styles, handled by CSS -->
+        <!-- Sidebar for Channels -->
+        <div id="sidebar">
+            <div id="server-header">GC Chat</div> <!-- Simple header -->
+            <div id="channel-list">
+                <!-- Channel links will be added here by JS -->
+            </div>
+            <div id="user-area">
+                 <span id="user-info"></span> <!-- Moved user info here -->
+                 <!-- Add logout button later? -->
+            </div>
         </div>
 
-        <div id="messages">
-            <!-- Chat messages will appear here -->
-        </div>
-
-        <div id="input-area">
-            <input type="text" id="message-input" placeholder="Type your message..." disabled>
-            <button id="send-button" disabled>Send</button>
+        <!-- Main Chat Area -->
+        <div id="main-content">
+            <div id="status-bar">
+                Status: <span id="connection-status">Initializing...</span>
+                <span id="current-channel-name"></span> <!-- Display current channel -->
+                <span id="host-info"></span> <!-- Server URL -->
+            </div>
+            <div id="messages">
+                <!-- Chat messages will appear here -->
+            </div>
+            <div id="input-area">
+                <input type="text" id="message-input" placeholder="Type your message..." disabled>
+                <button id="send-button" disabled>Send</button>
+            </div>
         </div>
     </div>
 
