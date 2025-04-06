@@ -23,7 +23,7 @@ let messagesCollection; // Database collection object
 
 // --- MongoDB Connection ---
 async function connectDB() {
-    if (!MONGODB_URI || MONGODB_URI.includes("<password>") || MONGODB_URI.includes("<Azurely12123>")) {
+    if (!MONGODB_URI || MONGODB_URI.includes("<password>") || MONGODB_URI.includes("<yuh>")) {
         console.error("[Server] ERROR: MongoDB connection string is missing, invalid, or contains a placeholder password.");
         console.error("[Server] Please set the MONGODB_URI environment variable with your actual connection string.");
         process.exit(1); // Exit if connection string is invalid
