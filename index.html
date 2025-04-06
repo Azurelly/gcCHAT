@@ -9,7 +9,6 @@
 <body>
     <!-- Login/Signup View -->
     <div id="auth-view">
-        <!-- ... Auth form ... -->
         <div class="auth-container">
             <h2 id="auth-title">Login</h2>
             <div id="auth-error" class="error-message"></div>
@@ -23,13 +22,11 @@
 
     <!-- Chat View -->
     <div id="chat-view" style="display: none;">
-        <!-- Sidebar -->
         <div id="sidebar">
             <div id="server-header">GC Chat</div>
             <div id="channel-list"></div>
             <div id="user-area"> <span id="user-info"></span> </div>
         </div>
-        <!-- Main Content -->
         <div id="main-content">
             <div id="status-bar"> Status: <span id="connection-status"></span> <span id="current-channel-name"></span> <span id="host-info"></span> </div>
             <div id="messages"></div>
@@ -37,21 +34,44 @@
         </div>
     </div>
 
-    <!-- User Profile Modal (Initially Hidden) -->
+    <!-- User Profile Modal -->
     <div id="profile-modal-backdrop" class="modal-backdrop" style="display: none;">
         <div id="profile-modal" class="modal">
             <button id="close-profile-modal" class="close-button">&times;</button>
-            <div class="profile-header">
-                <div id="profile-modal-avatar" class="profile-avatar-large"></div>
-                <div id="profile-modal-username" class="profile-username-large"></div>
+            <div class="profile-header"> <div id="profile-modal-avatar" class="profile-avatar-large"></div> <div id="profile-modal-username" class="profile-username-large"></div> </div>
+            <div class="profile-body"> <h4>About Me</h4> <p id="profile-modal-aboutme">Loading...</p> </div>
+        </div>
+    </div>
+
+    <!-- Create Channel Modal (Initially Hidden) -->
+    <div id="create-channel-modal-backdrop" class="modal-backdrop" style="display: none;">
+        <div id="create-channel-modal" class="modal">
+            <button id="close-create-channel-modal" class="close-button">&times;</button>
+            <h3>Create Text Channel</h3>
+            <div class="input-group">
+                <label for="new-channel-name">Channel Name</label>
+                <input type="text" id="new-channel-name" name="new-channel-name" placeholder="new-channel">
             </div>
-            <div class="profile-body">
-                <h4>About Me</h4>
-                <p id="profile-modal-aboutme">Loading...</p>
-                <!-- Add more profile fields here later -->
+            <div class="modal-actions">
+                <button id="cancel-create-channel-button" class="modal-button secondary">Cancel</button>
+                <button id="submit-create-channel-button" class="modal-button primary">Create Channel</button>
             </div>
         </div>
     </div>
+
+     <!-- Confirm Delete Channel Modal (Initially Hidden) -->
+     <div id="delete-channel-modal-backdrop" class="modal-backdrop" style="display: none;">
+        <div id="delete-channel-modal" class="modal">
+             <button id="close-delete-channel-modal" class="close-button">&times;</button>
+             <h3>Delete Channel</h3>
+             <p>Are you sure you want to delete <strong id="delete-channel-name-confirm">#channel</strong>? This cannot be undone.</p>
+             <div class="modal-actions">
+                 <button id="cancel-delete-channel-button" class="modal-button secondary">Cancel</button>
+                 <button id="submit-delete-channel-button" class="modal-button danger">Delete Channel</button>
+             </div>
+         </div>
+     </div>
+
 
     <script src="renderer.js"></script>
 </body>

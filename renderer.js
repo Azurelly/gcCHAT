@@ -3,15 +3,14 @@ const authView = document.getElementById('auth-view');
 const usernameInput = document.getElementById('username');
 const passwordInput = document.getElementById('password');
 const loginButton = document.getElementById('login-button');
-const signupButton = document.getElementById('signup-button'); // Button for signup mode
+const signupButton = document.getElementById('signup-button');
 const authTitle = document.getElementById('auth-title');
-const toggleAuthLink = document.getElementById('toggle-signup'); // Link used in toggle message
+const toggleAuthLink = document.getElementById('toggle-signup');
 const toggleAuthMessage = document.getElementById('toggle-auth-message');
 const authErrorDiv = document.getElementById('auth-error');
 
 const chatView = document.getElementById('chat-view');
 const sidebar = document.getElementById('sidebar');
-// const serverHeader = document.getElementById('server-header'); // No longer need separate header listener
 const channelListDiv = document.getElementById('channel-list');
 const mainContent = document.getElementById('main-content');
 const messagesDiv = document.getElementById('messages');
@@ -22,12 +21,29 @@ const currentChannelSpan = document.getElementById('current-channel-name');
 const hostInfoSpan = document.getElementById('host-info');
 const userInfoSpan = document.getElementById('user-info');
 
+// Profile Modal
 const profileModalBackdrop = document.getElementById('profile-modal-backdrop');
 const profileModal = document.getElementById('profile-modal');
 const closeProfileModalButton = document.getElementById('close-profile-modal');
 const profileModalAvatar = document.getElementById('profile-modal-avatar');
 const profileModalUsername = document.getElementById('profile-modal-username');
 const profileModalAboutMe = document.getElementById('profile-modal-aboutme');
+
+// Create Channel Modal
+const createChannelModalBackdrop = document.getElementById('create-channel-modal-backdrop');
+const createChannelModal = document.getElementById('create-channel-modal');
+const closeCreateChannelModalButton = document.getElementById('close-create-channel-modal');
+const newChannelNameInput = document.getElementById('new-channel-name');
+const cancelCreateChannelButton = document.getElementById('cancel-create-channel-button');
+const submitCreateChannelButton = document.getElementById('submit-create-channel-button');
+
+// Delete Channel Modal
+const deleteChannelModalBackdrop = document.getElementById('delete-channel-modal-backdrop');
+const deleteChannelModal = document.getElementById('delete-channel-modal');
+const closeDeleteChannelModalButton = document.getElementById('close-delete-channel-modal');
+const deleteChannelNameConfirm = document.getElementById('delete-channel-name-confirm');
+const cancelDeleteChannelButton = document.getElementById('cancel-delete-channel-button');
+const submitDeleteChannelButton = document.getElementById('submit-delete-channel-button');
 
 
 // --- State ---
@@ -37,64 +53,71 @@ let isLoginMode = true;
 let currentChannel = 'general';
 let availableChannels = ['general'];
 let lastMessageSender = null;
+let channelToDelete = null; // Store channel name when delete confirmation is shown
 
 // --- UI Switching ---
-function showAuthView(showLogin = true) {
-    isLoginMode = showLogin;
-    authTitle.textContent = isLoginMode ? 'Login' : 'Sign Up';
-    loginButton.style.display = isLoginMode ? 'block' : 'none';
-    signupButton.style.display = isLoginMode ? 'none' : 'block'; // Signup button only visible in signup mode
-    toggleAuthMessage.innerHTML = isLoginMode
-        ? `Don't have an account? <a href="#" id="toggle-signup">Sign up here</a>.`
-        : `Already have an account? <a href="#" id="toggle-login">Login here</a>.`;
-    attachToggleListeners();
-    authView.style.display = 'block';
-    chatView.style.display = 'none';
-    document.body.style.justifyContent = 'center';
-    document.body.style.alignItems = 'center';
-    hideAuthError();
-}
+function showAuthView(showLogin = true) { /* ... no change ... */ isLoginMode = showLogin; authTitle.textContent = isLoginMode ? 'Login' : 'Sign Up'; loginButton.style.display = isLoginMode ? 'block' : 'none'; signupButton.style.display = isLoginMode ? 'none' : 'block'; toggleAuthMessage.innerHTML = isLoginMode ? `Don't have an account? <a href="#" id="toggle-signup">Sign up here</a>.` : `Already have an account? <a href="#" id="toggle-login">Login here</a>.`; attachToggleListeners(); authView.style.display = 'block'; chatView.style.display = 'none'; document.body.style.justifyContent = 'center'; document.body.style.alignItems = 'center'; hideAuthError(); }
 function showChatView() { /* ... no change ... */ authView.style.display = 'none'; chatView.style.display = 'flex'; document.body.style.justifyContent = 'flex-start'; document.body.style.alignItems = 'stretch'; messageInput.disabled = false; sendButton.disabled = false; messageInput.focus(); updateChannelHighlight(); }
 function showAuthError(message) { /* ... no change ... */ authErrorDiv.textContent = message; authErrorDiv.style.display = 'block'; }
 function hideAuthError() { /* ... no change ... */ authErrorDiv.textContent = ''; authErrorDiv.style.display = 'none'; }
 
-// --- Profile Modal ---
+// --- Modals ---
 function showProfileModal(profile) { /* ... no change ... */ profileModalUsername.textContent = profile.username || 'Unknown User'; profileModalAboutMe.textContent = profile.aboutMe || ''; const firstLetter = profile.username?.charAt(0)?.toUpperCase() || '?'; profileModalAvatar.textContent = firstLetter; profileModalAvatar.style.backgroundColor = getAvatarColor(profile.username); profileModalBackdrop.style.display = 'flex'; }
 function hideProfileModal() { /* ... no change ... */ profileModalBackdrop.style.display = 'none'; profileModalUsername.textContent = ''; profileModalAboutMe.textContent = 'Loading...'; profileModalAvatar.textContent = '?'; profileModalAvatar.style.backgroundColor = '#7289da'; }
 closeProfileModalButton.addEventListener('click', hideProfileModal);
 profileModalBackdrop.addEventListener('click', (e) => { if (e.target === profileModalBackdrop) hideProfileModal(); });
 
-
-// --- Channel UI ---
-function renderChannelList() {
-    channelListDiv.innerHTML = '';
-    availableChannels.forEach(channelName => {
-        const channelLink = document.createElement('a');
-        channelLink.href = '#';
-        channelLink.classList.add('channel-item');
-        channelLink.dataset.channel = channelName;
-        channelLink.textContent = channelName;
-        channelLink.addEventListener('click', (e) => { e.preventDefault(); if (channelName !== currentChannel) window.electronAPI.switchChannel(channelName); });
-        if (isAdmin && channelName !== 'general') {
-            channelLink.addEventListener('contextmenu', (e) => { e.preventDefault(); window.electronAPI.showChannelContextMenu(channelName); });
-        }
-        channelListDiv.appendChild(channelLink);
-    });
-    updateChannelHighlight();
+function showCreateChannelModal() {
+    newChannelNameInput.value = ''; // Clear input
+    createChannelModalBackdrop.style.display = 'flex';
+    newChannelNameInput.focus();
 }
-function updateChannelHighlight() { /* ... no change ... */ document.querySelectorAll('.channel-item').forEach(item => { if (item.dataset.channel === currentChannel) item.classList.add('active'); else item.classList.remove('active'); }); currentChannelSpan.textContent = currentChannel; messageInput.placeholder = `Message #${currentChannel}`; }
-
-// Add context menu listener to the entire sidebar for admins
-sidebar.addEventListener('contextmenu', (e) => {
-    // Prevent menu if clicking on a specific channel item (handled separately) or user area
-    if (e.target.closest('.channel-item') || e.target.closest('#user-area')) {
-        return;
-    }
-    e.preventDefault();
-    if (isAdmin) {
-        window.electronAPI.showSidebarContextMenu();
+function hideCreateChannelModal() {
+    createChannelModalBackdrop.style.display = 'none';
+}
+closeCreateChannelModalButton.addEventListener('click', hideCreateChannelModal);
+cancelCreateChannelButton.addEventListener('click', hideCreateChannelModal);
+createChannelModalBackdrop.addEventListener('click', (e) => { if (e.target === createChannelModalBackdrop) hideCreateChannelModal(); });
+submitCreateChannelButton.addEventListener('click', () => {
+    const channelName = newChannelNameInput.value.trim();
+    if (channelName) {
+        window.electronAPI.createChannel(channelName);
+        hideCreateChannelModal(); // Close modal after sending request
+    } else {
+        alert("Please enter a channel name."); // Simple validation
     }
 });
+newChannelNameInput.addEventListener('keypress', (e) => { // Allow Enter to submit
+    if (e.key === 'Enter') {
+        submitCreateChannelButton.click();
+    }
+});
+
+
+function showDeleteChannelModal(channelName) {
+    channelToDelete = channelName; // Store the channel name
+    deleteChannelNameConfirm.textContent = `#${channelName}`;
+    deleteChannelModalBackdrop.style.display = 'flex';
+}
+function hideDeleteChannelModal() {
+    deleteChannelModalBackdrop.style.display = 'none';
+    channelToDelete = null; // Clear stored name
+}
+closeDeleteChannelModalButton.addEventListener('click', hideDeleteChannelModal);
+cancelDeleteChannelButton.addEventListener('click', hideDeleteChannelModal);
+deleteChannelModalBackdrop.addEventListener('click', (e) => { if (e.target === deleteChannelModalBackdrop) hideDeleteChannelModal(); });
+submitDeleteChannelButton.addEventListener('click', () => {
+    if (channelToDelete) {
+        window.electronAPI.deleteChannel(channelToDelete);
+        hideDeleteChannelModal();
+    }
+});
+
+
+// --- Channel UI ---
+function renderChannelList() { /* ... no change ... */ channelListDiv.innerHTML = ''; availableChannels.forEach(channelName => { const channelLink = document.createElement('a'); channelLink.href = '#'; channelLink.classList.add('channel-item'); channelLink.dataset.channel = channelName; channelLink.textContent = channelName; channelLink.addEventListener('click', (e) => { e.preventDefault(); if (channelName !== currentChannel) window.electronAPI.switchChannel(channelName); }); if (isAdmin && channelName !== 'general') { channelLink.addEventListener('contextmenu', (e) => { e.preventDefault(); window.electronAPI.showChannelContextMenu(channelName); }); } channelListDiv.appendChild(channelLink); }); updateChannelHighlight(); }
+function updateChannelHighlight() { /* ... no change ... */ document.querySelectorAll('.channel-item').forEach(item => { if (item.dataset.channel === currentChannel) item.classList.add('active'); else item.classList.remove('active'); }); currentChannelSpan.textContent = currentChannel; messageInput.placeholder = `Message #${currentChannel}`; }
+sidebar.addEventListener('contextmenu', (e) => { /* ... no change ... */ if (e.target.closest('.channel-item') || e.target.closest('#user-area')) return; e.preventDefault(); if (isAdmin) window.electronAPI.showSidebarContextMenu(); });
 
 
 // --- Message Handling ---
@@ -107,8 +130,7 @@ function updateStatus(status) { /* ... no change ... */ console.log("Status Upda
 
 // --- Event Listeners ---
 loginButton.addEventListener('click', () => { /* ... no change ... */ const username = usernameInput.value.trim(); const password = passwordInput.value.trim(); if (username && password) { hideAuthError(); window.electronAPI.sendLogin({ username, password }); } else { showAuthError('Please enter both username and password.'); } });
-// Signup button is only visible in signup mode, handles signup action
-signupButton.addEventListener('click', () => { const username = usernameInput.value.trim(); const password = passwordInput.value.trim(); if (username && password) { hideAuthError(); window.electronAPI.sendSignup({ username, password }); } else { showAuthError('Please enter both username and password.'); } });
+signupButton.addEventListener('click', () => { /* ... no change ... */ const username = usernameInput.value.trim(); const password = passwordInput.value.trim(); if (username && password) { hideAuthError(); window.electronAPI.sendSignup({ username, password }); } else { showAuthError('Please enter both username and password.'); } });
 function attachToggleListeners() { /* ... no change ... */ const signupLink = document.getElementById('toggle-signup'); const loginLink = document.getElementById('toggle-login'); if (signupLink) signupLink.addEventListener('click', (e) => { e.preventDefault(); showAuthView(false); }); if (loginLink) loginLink.addEventListener('click', (e) => { e.preventDefault(); showAuthView(true); }); }
 attachToggleListeners();
 sendButton.addEventListener('click', () => { /* ... no change ... */ const text = messageInput.value.trim(); if (text && !messageInput.disabled) { window.electronAPI.sendMessage(text); messageInput.value = ''; } });
@@ -127,17 +149,12 @@ window.electronAPI.onSendError((errorMsg) => { /* ... no change ... */ console.e
 window.electronAPI.onUserProfileResponse(response => { /* ... no change ... */ if (response.success) { showProfileModal(response.profile); } else { alert(`Error fetching profile: ${response.error}`); } });
 window.electronAPI.onError(errorData => { /* ... no change ... */ alert(`Server Error: ${errorData.message}`); });
 
-// Listen for prompts/confirmations from main process context menus
-window.electronAPI.onPromptCreateChannel(() => { // Changed from ipcRenderer.on
-    const channelName = prompt("Enter new channel name:");
-    if (channelName && channelName.trim()) {
-        window.electronAPI.createChannel(channelName.trim());
-    }
+// Listen for prompts/confirmations using the correct API
+window.electronAPI.onPromptCreateChannel(() => {
+    showCreateChannelModal(); // Show the custom modal instead of prompt()
 });
-window.electronAPI.onConfirmDeleteChannel((channelName) => { // Changed from ipcRenderer.on
-    if (confirm(`Are you sure you want to delete the channel '#${channelName}'? This will remove all messages within it.`)) {
-        window.electronAPI.deleteChannel(channelName);
-    }
+window.electronAPI.onConfirmDeleteChannel((channelName) => {
+    showDeleteChannelModal(channelName); // Show the custom confirmation modal
 });
 
 
@@ -148,7 +165,7 @@ window.addEventListener('beforeunload', () => { window.electronAPI.cleanupListen
 // Initialize view
 showAuthView(true);
 
-console.log('renderer.js loaded with final UI logic');
+console.log('renderer.js loaded with final UI logic, IPC fixes, and modals');
 
 // --- Utility Functions (Avatar Color) ---
 function simpleHash(str) { let hash = 0; for (let i = 0; i < str.length; i++) { const char = str.charCodeAt(i); hash = ((hash << 5) - hash) + char; hash |= 0; } return Math.abs(hash); }
