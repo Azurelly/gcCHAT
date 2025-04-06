@@ -20,8 +20,8 @@ const connectionStatusSpan = document.getElementById('connection-status');
 const currentChannelSpan = document.getElementById('current-channel-name');
 const hostInfoSpan = document.getElementById('host-info');
 const userInfoSpan = document.getElementById('user-info');
-const partyModeButton = document.getElementById('party-mode-button'); // Added party button
-const typingIndicatorDiv = document.getElementById('typing-indicator'); // Added typing indicator
+const partyModeButton = document.getElementById('party-mode-button');
+const typingIndicatorDiv = document.getElementById('typing-indicator');
 const profileModalBackdrop = document.getElementById('profile-modal-backdrop');
 const profileModal = document.getElementById('profile-modal');
 const closeProfileModalButton = document.getElementById('close-profile-modal');
@@ -56,9 +56,9 @@ let lastMessageSender = null;
 let channelToDelete = null;
 let allUsers = [];
 let onlineUsers = [];
-let partyModeActive = false; // Track party mode state locally
-let typingTimeout = null; // Timeout ID for stopping typing status
-let currentlyTypingUsers = []; // Users currently typing
+let partyModeActive = false;
+let typingTimeout = null;
+let currentlyTypingUsers = [];
 
 // --- UI Switching ---
 function showAuthView(showLogin = true) { /* ... no change ... */ isLoginMode = showLogin; authTitle.textContent = isLoginMode ? 'Login' : 'Sign Up'; loginButton.style.display = isLoginMode ? 'block' : 'none'; signupButton.style.display = isLoginMode ? 'none' : 'block'; toggleAuthMessage.innerHTML = isLoginMode ? `Don't have an account? <a href="#" id="toggle-signup">Sign up here</a>.` : `Already have an account? <a href="#" id="toggle-login">Login here</a>.`; attachToggleListeners(); authView.style.display = 'block'; chatView.style.display = 'none'; document.body.style.justifyContent = 'center'; document.body.style.alignItems = 'center'; hideAuthError(); }
@@ -104,14 +104,20 @@ function deleteMessageUI(payload) { /* ... no change ... */ const messageTextDiv
 
 // --- Status Update ---
 function updateStatus(status) {
-    console.log("Status Update:", status);
+    // *** DEBUG LOGGING ADDED ***
+    console.log("Status Update Received:", status);
     let statusText = ''; let serverInfoText = ''; let userInfoText = '';
     if (status.username) localUsername = status.username;
-    if (status.isAdmin !== undefined) isAdmin = status.isAdmin; // Update admin status
+    if (status.isAdmin !== undefined) {
+        isAdmin = status.isAdmin;
+        console.log(`[Renderer] Admin status updated: ${isAdmin}`); // *** DEBUG LOGGING ADDED ***
+    }
     if (status.currentChannel) currentChannel = status.currentChannel;
 
     // Show/hide party mode button based on admin status
     partyModeButton.style.display = isAdmin ? 'block' : 'none';
+    console.log(`[Renderer] Party button display: ${partyModeButton.style.display}`); // *** DEBUG LOGGING ADDED ***
+
 
     if (status.connected) { statusText = 'Online'; serverInfoText = ''; userInfoText = `${localUsername}`; }
     else if (status.wsConnected) { statusText = 'Authenticating...'; serverInfoText = ''; userInfoText = ''; if (authView.style.display === 'none') showAuthView(isLoginMode); }
@@ -124,20 +130,7 @@ function updateStatus(status) {
 }
 
 // --- Typing Indicator ---
-function updateTypingIndicator() {
-    const typingNames = currentlyTypingUsers.filter(name => name !== localUsername); // Exclude self
-    let text = '';
-    if (typingNames.length === 1) {
-        text = `<span>${typingNames[0]}</span> is typing<span class="dots"><span>.</span><span>.</span><span>.</span></span>`;
-    } else if (typingNames.length === 2) {
-        text = `<span>${typingNames[0]}</span> and <span>${typingNames[1]}</span> are typing<span class="dots"><span>.</span><span>.</span><span>.</span></span>`;
-    } else if (typingNames.length === 3) {
-         text = `<span>${typingNames[0]}</span>, <span>${typingNames[1]}</span>, and <span>${typingNames[2]}</span> are typing<span class="dots"><span>.</span><span>.</span><span>.</span></span>`;
-    } else if (typingNames.length > 3) {
-        text = `Multiple people are typing<span class="dots"><span>.</span><span>.</span><span>.</span></span>`;
-    }
-    typingIndicatorDiv.innerHTML = text;
-}
+function updateTypingIndicator() { /* ... no change ... */ const typingNames = currentlyTypingUsers.filter(name => name !== localUsername); let text = ''; if (typingNames.length === 1) { text = `<span>${typingNames[0]}</span> is typing<span class="dots"><span>.</span><span>.</span><span>.</span></span>`; } else if (typingNames.length === 2) { text = `<span>${typingNames[0]}</span> and <span>${typingNames[1]}</span> are typing<span class="dots"><span>.</span><span>.</span><span>.</span></span>`; } else if (typingNames.length === 3) { text = `<span>${typingNames[0]}</span>, <span>${typingNames[1]}</span>, and <span>${typingNames[2]}</span> are typing<span class="dots"><span>.</span><span>.</span><span>.</span></span>`; } else if (typingNames.length > 3) { text = `Multiple people are typing<span class="dots"><span>.</span><span>.</span><span>.</span></span>`; } typingIndicatorDiv.innerHTML = text; }
 
 
 // --- Event Listeners ---
@@ -145,27 +138,11 @@ loginButton.addEventListener('click', () => { /* ... no change ... */ const user
 signupButton.addEventListener('click', () => { /* ... no change ... */ const username = usernameInput.value.trim(); const password = passwordInput.value.trim(); if (username && password) { hideAuthError(); window.electronAPI.sendSignup({ username, password }); } else { showAuthError('Please enter both username and password.'); } });
 function attachToggleListeners() { /* ... no change ... */ const signupLink = document.getElementById('toggle-signup'); const loginLink = document.getElementById('toggle-login'); if (signupLink) signupLink.addEventListener('click', (e) => { e.preventDefault(); showAuthView(false); }); if (loginLink) loginLink.addEventListener('click', (e) => { e.preventDefault(); showAuthView(true); }); }
 attachToggleListeners();
-sendButton.addEventListener('click', () => { /* ... no change ... */ const text = messageInput.value.trim(); if (text && !messageInput.disabled) { window.electronAPI.sendMessage(text); messageInput.value = ''; window.electronAPI.stopTyping(); /* Stop typing on send */ } });
-messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter' && !e.shiftKey && !messageInput.disabled) { e.preventDefault(); sendButton.click(); } });
+sendButton.addEventListener('click', () => { /* ... no change ... */ const text = messageInput.value.trim(); if (text && !messageInput.disabled) { window.electronAPI.sendMessage(text); messageInput.value = ''; window.electronAPI.stopTyping(); } });
+messageInput.addEventListener('keypress', (e) => { /* ... no change ... */ if (e.key === 'Enter' && !e.shiftKey && !messageInput.disabled) { e.preventDefault(); sendButton.click(); } });
 passwordInput.addEventListener('keypress', (e) => { /* ... no change ... */ if (e.key === 'Enter') { if (isLoginMode) loginButton.click(); else signupButton.click(); } });
-
-// Typing indicator listener
-messageInput.addEventListener('input', () => {
-    if (!messageInput.disabled) {
-        // Send start typing immediately
-        window.electronAPI.startTyping();
-        // Clear previous timeout and set a new one to send stop typing
-        clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => {
-            window.electronAPI.stopTyping();
-        }, 2500); // Send stop typing after 2.5 seconds of inactivity
-    }
-});
-
-// Party mode button listener
-partyModeButton.addEventListener('click', () => {
-    window.electronAPI.togglePartyMode();
-});
+messageInput.addEventListener('input', () => { /* ... no change ... */ if (!messageInput.disabled) { window.electronAPI.startTyping(); clearTimeout(typingTimeout); typingTimeout = setTimeout(() => { window.electronAPI.stopTyping(); }, 2500); } });
+partyModeButton.addEventListener('click', () => { /* ... no change ... */ window.electronAPI.togglePartyMode(); });
 
 
 // --- IPC Listeners ---
@@ -184,17 +161,11 @@ window.electronAPI.onMessageEdited((payload) => { updateEditedMessage(payload); 
 window.electronAPI.onMessageDeleted((payload) => { deleteMessageUI(payload); });
 window.electronAPI.onEditMessagePrompt((messageId) => { handleEditMessage(messageId); });
 window.electronAPI.onUserListUpdate((payload) => { /* ... no change ... */ console.log("Received user list update:", payload); allUsers = payload.all || []; onlineUsers = payload.online || []; renderUserList(); });
+window.electronAPI.onPartyModeToggle((payload) => { /* ... no change ... */ partyModeActive = payload.active; document.body.classList.toggle('party-mode', partyModeActive); partyModeButton.classList.toggle('active', partyModeActive); console.log(`Party mode is now ${partyModeActive ? 'ON' : 'OFF'}`); });
 
-// Listen for party mode toggle
-window.electronAPI.onPartyModeToggle((payload) => {
-    partyModeActive = payload.active;
-    document.body.classList.toggle('party-mode', partyModeActive);
-    partyModeButton.classList.toggle('active', partyModeActive);
-    console.log(`Party mode is now ${partyModeActive ? 'ON' : 'OFF'}`);
-});
-
-// Listen for typing updates
 window.electronAPI.onTypingUpdate((payload) => {
+    // *** DEBUG LOGGING ADDED ***
+    console.log("Received typing update:", payload);
     currentlyTypingUsers = payload.typing || [];
     updateTypingIndicator();
 });
@@ -207,7 +178,7 @@ window.addEventListener('beforeunload', () => { window.electronAPI.cleanupListen
 // Initialize view
 showAuthView(true);
 
-console.log('renderer.js loaded with final UI logic, IPC fixes, modals, edit/delete, presence, party, typing');
+console.log('renderer.js loaded with final UI logic, IPC fixes, modals, edit/delete, presence, party, typing, debug');
 
 // --- Utility Functions (Avatar Color) ---
 function simpleHash(str) { let hash = 0; for (let i = 0; i < str.length; i++) { const char = str.charCodeAt(i); hash = ((hash << 5) - hash) + char; hash |= 0; } return Math.abs(hash); }
