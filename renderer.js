@@ -47,6 +47,8 @@ function showChatView() {
     chatView.style.display = 'flex'; // Use flex for chat layout
     document.body.style.justifyContent = 'flex-start'; // Reset body alignment
     document.body.style.alignItems = 'stretch';
+    messageInput.disabled = false; // Enable input on showing chat
+    sendButton.disabled = false;
     messageInput.focus(); // Focus message input when chat appears
 }
 
@@ -100,43 +102,47 @@ function updateStatus(status) {
     let serverInfoText = '';
     let userInfoText = '';
 
-    // Update local username if logged in
-    localUsername = status.username || ''; // Use username from status if available
+    // Update local username if provided by status (e.g., on initial load if already logged in)
+    // Login response is the primary source for setting localUsername after login action
+    if (status.username) {
+         localUsername = status.username;
+    }
 
-    if (status.connected) { // Connected means logged in successfully
+    // Determine UI state based on WebSocket connection and login status
+    if (status.connected) { // Logged in
         statusText = 'Online';
         serverInfoText = `(Server: ${status.serverIp})`;
         userInfoText = `Logged in as: ${localUsername}`;
-        showChatView(); // Show chat on successful login/connection
-    } else if (status.wsConnected) { // WebSocket connected, but not logged in yet
+        // Don't call showChatView here - let login response handle it
+    } else if (status.wsConnected) { // Socket connected, but not logged in
         statusText = 'Connected (Not Logged In)';
         serverInfoText = `(Server: ${status.serverIp})`;
         userInfoText = '';
-        showAuthView(isLoginMode); // Stay on auth view
+        if (authView.style.display === 'none') showAuthView(isLoginMode); // Show auth if chat was visible
     } else if (status.connecting) {
         statusText = `Connecting to ${status.serverIp || 'server'}...`;
         serverInfoText = '';
         userInfoText = '';
-        showAuthView(isLoginMode); // Show auth view while connecting
+        if (authView.style.display === 'none') showAuthView(isLoginMode);
     } else if (status.error) {
         statusText = `Error: ${status.error}`;
         serverInfoText = '';
         userInfoText = '';
-        showAuthView(isLoginMode); // Show auth view on error
+         if (authView.style.display === 'none') showAuthView(isLoginMode);
         // Don't show auth error here, let specific login/signup handlers do it
     } else { // Default to disconnected state
         statusText = 'Disconnected';
         serverInfoText = `(Server: ${status.serverIp})`;
         userInfoText = '';
-        showAuthView(isLoginMode); // Show auth view if disconnected
+         if (authView.style.display === 'none') showAuthView(isLoginMode);
     }
 
     connectionStatusSpan.textContent = statusText;
     hostInfoSpan.textContent = serverInfoText;
     userInfoSpan.textContent = userInfoText;
 
-    // Enable/disable chat input based on login status
-    const isLoggedIn = status.connected === true;
+    // Enable/disable chat input based on login status (localUsername being set)
+    const isLoggedIn = !!localUsername;
     messageInput.disabled = !isLoggedIn;
     sendButton.disabled = !isLoggedIn;
 }
@@ -167,24 +173,22 @@ signupButton.addEventListener('click', () => {
     }
 });
 
-// Need function to re-attach listeners because innerHTML is changed
 function attachToggleListeners() {
     const signupLink = document.getElementById('toggle-signup');
     const loginLink = document.getElementById('toggle-login');
     if (signupLink) {
         signupLink.addEventListener('click', (e) => {
             e.preventDefault();
-            showAuthView(false); // Show signup mode
+            showAuthView(false);
         });
     }
     if (loginLink) {
         loginLink.addEventListener('click', (e) => {
             e.preventDefault();
-            showAuthView(true); // Show login mode
+            showAuthView(true);
         });
     }
 }
-// Initial attachment
 attachToggleListeners();
 
 
@@ -202,7 +206,6 @@ messageInput.addEventListener('keypress', (e) => {
     }
 });
 
-// Also allow Enter key in password field to trigger login/signup
 passwordInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         if (isLoginMode) {
@@ -218,10 +221,8 @@ passwordInput.addEventListener('keypress', (e) => {
 window.electronAPI.onSignupResponse(response => {
     console.log('Signup Response:', response);
     if (response.success) {
-        // Optionally switch to login view after successful signup
         showAuthView(true);
-        // Show a success message (maybe not in the error div)
-        alert('Signup successful! Please log in.'); // Simple alert for now
+        alert('Signup successful! Please log in.');
     } else {
         showAuthError(response.error || 'Signup failed.');
     }
@@ -231,9 +232,11 @@ window.electronAPI.onLoginResponse(response => {
     console.log('Login Response:', response);
     if (response.success) {
         localUsername = response.username; // Store username
-        // Status update will handle showing chat view
-        // showChatView(); // Let status update handle this
         hideAuthError();
+        showChatView(); // <<< --- ADDED THIS LINE --- >>> Switch to chat view on successful login
+        // Update status bar immediately
+        userInfoSpan.textContent = `Logged in as: ${localUsername}`;
+        connectionStatusSpan.textContent = 'Online';
     } else {
         showAuthError(response.error || 'Login failed.');
     }
@@ -241,7 +244,7 @@ window.electronAPI.onLoginResponse(response => {
 
 
 window.electronAPI.onMessageReceived((messageData) => {
-    console.log('Renderer received message:', messageData);
+    // console.log('Renderer received message:', messageData); // Can be noisy
     addMessage(messageData);
 });
 
@@ -252,12 +255,12 @@ window.electronAPI.onLoadHistory((history) => {
 });
 
 window.electronAPI.onStatusUpdate((status) => {
+    // This will now mainly handle connection status changes after initial login
     updateStatus(status);
 });
 
 window.electronAPI.onSendError((errorMsg) => {
     console.error('Send Error:', errorMsg);
-    // Display error in chat view if it's visible, otherwise maybe auth view?
     if (chatView.style.display !== 'none') {
         const errorDiv = document.createElement('div');
         errorDiv.style.color = 'red';
@@ -272,7 +275,7 @@ window.electronAPI.onSendError((errorMsg) => {
             }
         }, 5000);
     } else {
-        showAuthError(`Send Error: ${errorMsg}`); // Show in auth view if chat isn't visible
+        showAuthError(`Send Error: ${errorMsg}`);
     }
 });
 
@@ -285,6 +288,6 @@ window.addEventListener('beforeunload', () => {
 });
 
 // Initialize view
-showAuthView(true); // Start in login mode
+showAuthView(true);
 
-console.log('renderer.js loaded with auth logic');
+console.log('renderer.js loaded with auth logic and view switch fix');
