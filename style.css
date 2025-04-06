@@ -182,8 +182,14 @@ body {
   /* Reuse existing user-avatar style */
   width: 32px;
   height: 32px;
+  border-radius: 50%; /* Make it circular */
   font-size: 1em;
   flex-shrink: 0;
+  /* Add display flex for centering text, if not already inherited */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: uppercase; /* Ensure letter is uppercase */
 }
 #user-area-username {
   font-weight: 500;
