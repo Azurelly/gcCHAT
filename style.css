@@ -1,35 +1,139 @@
+/* General Body Styles */
 body {
     font-family: sans-serif;
     margin: 0;
-    display: flex;
-    flex-direction: column;
+    height: 100vh;
+    background-color: #f0f2f5; /* Light background */
+    display: flex; /* Needed for centering auth view */
+    justify-content: center; /* Center auth view horizontally */
+    align-items: center; /* Center auth view vertically */
+}
+
+/* Authentication View Styles */
+#auth-view {
+    width: 100%;
+    max-width: 400px; /* Limit auth form width */
+    padding: 30px;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.auth-container h2 {
+    text-align: center;
+    margin-bottom: 25px;
+    color: #333;
+}
+
+.input-group {
+    margin-bottom: 15px;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #555;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box; /* Include padding and border in element's total width and height */
+}
+
+.auth-button {
+    width: 100%;
+    padding: 12px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1em;
+    margin-top: 10px; /* Space above buttons */
+}
+
+.auth-button:hover {
+    background-color: #0056b3;
+}
+
+#signup-button {
+    background-color: #6c757d; /* Different color for signup */
+}
+#signup-button:hover {
+    background-color: #5a6268;
+}
+
+#toggle-auth-message {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 0.9em;
+    color: #555;
+}
+
+#toggle-auth-message a {
+    color: #007bff;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+#toggle-auth-message a:hover {
+    text-decoration: underline;
+}
+
+.error-message {
+    color: #dc3545; /* Red for errors */
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+    text-align: center;
+    font-size: 0.9em;
+    display: none; /* Hidden by default */
+}
+
+
+/* Chat View Styles (Mostly unchanged, ensure body styles don't conflict) */
+#chat-view {
+    /* These styles apply when chat-view is visible */
+    width: 100%; /* Take full width */
+    max-width: none; /* Override auth view max-width */
     height: 100vh;
     background-color: #f4f4f4;
+    display: flex; /* Use flex for layout */
+    flex-direction: column;
+    padding: 0; /* Remove padding */
+    box-shadow: none; /* Remove shadow */
+    border-radius: 0; /* Remove border-radius */
 }
 
 #status-bar {
-    padding: 8px;
+    padding: 8px 12px; /* Adjusted padding */
     background-color: #ddd;
     border-bottom: 1px solid #ccc;
     font-size: 0.9em;
     display: flex;
     align-items: center;
-    gap: 15px; /* Spacing between status elements */
+    gap: 15px;
+    flex-shrink: 0; /* Prevent status bar from shrinking */
 }
 
 #connection-status {
     font-weight: bold;
 }
 
-#host-info {
+#host-info, #user-info { /* Style user info span */
     font-style: italic;
     color: #555;
 }
-
-#manual-connect-area input {
-    padding: 4px;
-    margin-right: 5px;
+#user-info {
+    margin-left: auto; /* Push user info to the right */
 }
+
 
 #messages {
     flex-grow: 1;
@@ -45,33 +149,39 @@ body {
     border-radius: 15px;
     max-width: 70%;
     word-wrap: break-word;
+    display: flex; /* Use flex for better alignment */
+    flex-direction: column; /* Stack sender/text/timestamp */
 }
 
 .message .sender {
     font-weight: bold;
     font-size: 0.8em;
     color: #333;
-    display: block; /* Put sender on its own line */
     margin-bottom: 2px;
 }
 
 .message .timestamp {
     font-size: 0.7em;
     color: #888;
-    margin-left: 10px;
-    float: right; /* Align timestamp to the right */
+    align-self: flex-end; /* Align timestamp to the right within the flex column */
+    margin-top: 2px;
 }
 
 .message-local {
-    background-color: #dcf8c6; /* Light green for own messages */
-    margin-left: auto; /* Align own messages to the right */
+    background-color: #dcf8c6;
+    margin-left: auto;
     border-bottom-right-radius: 5px;
+    align-items: flex-end; /* Align content to the right */
 }
 
 .message-remote {
-    background-color: #e0e0e0; /* Light grey for others' messages */
-    margin-right: auto; /* Align others' messages to the left */
+    background-color: #e0e0e0;
+    margin-right: auto;
     border-bottom-left-radius: 5px;
+    align-items: flex-start; /* Align content to the left */
+}
+.message-remote .sender {
+    color: #0056b3; /* Different color for remote sender */
 }
 
 
@@ -79,6 +189,7 @@ body {
     display: flex;
     padding: 10px;
     background-color: #eee;
+    flex-shrink: 0; /* Prevent input area from shrinking */
 }
 
 #message-input {
@@ -89,7 +200,7 @@ body {
     margin-right: 10px;
 }
 
-#send-button, #connect-button {
+#send-button { /* Removed connect-button styling */
     padding: 10px 15px;
     background-color: #007bff;
     color: white;
@@ -98,6 +209,14 @@ body {
     cursor: pointer;
 }
 
-#send-button:hover, #connect-button:hover {
+#send-button:hover {
     background-color: #0056b3;
+}
+
+#send-button:disabled { /* Style for disabled button */
+    background-color: #aaa;
+    cursor: not-allowed;
+}
+#message-input:disabled { /* Style for disabled input */
+     background-color: #f8f8f8;
 }

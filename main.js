@@ -3,17 +3,16 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
 import { WebSocket } from 'ws';
-// Bonjour is no longer needed by the client connecting to a public server
 
 // --- Configuration ---
-// Connect to the deployed Render server using Secure WebSockets (wss)
 const SERVER_URL = 'wss://gcchat.onrender.com';
 
 // --- State ---
 let mainWindow = null;
-let serverAddress = SERVER_URL; // Store the target server URL
+let serverAddress = SERVER_URL;
 let clientSocket = null;
 let messageHistory = [];
+let loggedInUsername = null; // Store logged-in user
 
 // --- Utility Functions ---
 const __filename = fileURLToPath(import.meta.url);
@@ -21,11 +20,7 @@ const __dirname = path.dirname(__filename);
 
 // --- WebSocket Client Logic ---
 function connectToServer() {
-  // Prevent multiple connection attempts
-  if (clientSocket && (clientSocket.readyState === WebSocket.OPEN || clientSocket.readyState === WebSocket.CONNECTING)) {
-      console.log('[Client] Already connected or connecting.');
-      return;
-  }
+  if (clientSocket && (clientSocket.readyState === WebSocket.OPEN || clientSocket.readyState === WebSocket.CONNECTING)) return;
 
   console.log(`[Client] Attempting to connect to server at ${serverAddress}`);
   mainWindow?.webContents.send('status-update', { connected: false, connecting: true, serverIp: serverAddress, localHostname: os.hostname() });
@@ -35,28 +30,50 @@ function connectToServer() {
   } catch (error) {
       console.error(`[Client] Error creating WebSocket connection: ${error.message}`);
       mainWindow?.webContents.send('status-update', { connected: false, error: `Failed to initiate connection: ${error.message}`, serverIp: serverAddress, localHostname: os.hostname() });
-      // Optional: Retry connection after a delay?
-      setTimeout(connectToServer, 10000); // Retry after 10 seconds
+      setTimeout(connectToServer, 10000);
       return;
   }
 
-
   clientSocket.on('open', () => {
     console.log('[Client] Connected to server');
-    mainWindow?.webContents.send('status-update', { connected: true, serverIp: serverAddress, localHostname: os.hostname() });
+    // Don't send status update immediately, wait for potential login
+    // mainWindow?.webContents.send('status-update', { connected: true, serverIp: serverAddress, localHostname: os.hostname() });
+    // Instead, maybe just indicate connection is open, UI waits for login response
+     mainWindow?.webContents.send('status-update', { wsConnected: true, serverIp: serverAddress, localHostname: os.hostname() });
   });
 
   clientSocket.on('message', (message) => {
     try {
         const parsedMessage = JSON.parse(message);
-        if (parsedMessage.type === 'history') {
-            messageHistory = parsedMessage.payload || [];
-            mainWindow?.webContents.send('load-history', messageHistory);
-        } else if (parsedMessage.type === 'chat') {
-            if (!messageHistory.some(m => m.id === parsedMessage.id && m.timestamp === parsedMessage.timestamp)) {
-                 messageHistory.push(parsedMessage);
-            }
-            mainWindow?.webContents.send('message-received', parsedMessage);
+        // Route message to renderer based on type
+        switch(parsedMessage.type) {
+            case 'history':
+                messageHistory = parsedMessage.payload || [];
+                mainWindow?.webContents.send('load-history', messageHistory);
+                break;
+            case 'chat':
+                // Add to local history only if needed (server sends history on login)
+                // if (!messageHistory.some(m => m.id === parsedMessage.id && m.timestamp === parsedMessage.timestamp)) {
+                //      messageHistory.push(parsedMessage);
+                // }
+                mainWindow?.webContents.send('message-received', parsedMessage);
+                break;
+            case 'login-response':
+                if (parsedMessage.success) {
+                    loggedInUsername = parsedMessage.username; // Store username on successful login
+                    console.log(`[Client] Login successful for ${loggedInUsername}`);
+                } else {
+                    loggedInUsername = null;
+                }
+                // Forward the whole response to renderer
+                mainWindow?.webContents.send('login-response', parsedMessage);
+                break;
+            case 'signup-response':
+                // Forward response to renderer
+                mainWindow?.webContents.send('signup-response', parsedMessage);
+                break;
+            default:
+                console.warn(`[Client] Received unhandled message type: ${parsedMessage.type}`);
         }
     } catch (e) {
         console.error('[Client] Failed to parse message from server:', message.toString(), e);
@@ -66,22 +83,17 @@ function connectToServer() {
   clientSocket.on('close', (code, reason) => {
     console.log(`[Client] Disconnected from server. Code: ${code}, Reason: ${reason.toString()}. Retrying connection...`);
     clientSocket = null;
-    // serverAddress remains the same public URL
-    mainWindow?.webContents.send('status-update', { connected: false, error: 'Disconnected. Retrying...', serverIp: serverAddress, localHostname: os.hostname() });
-    // Retry connection after a delay
-    setTimeout(connectToServer, 5000); // Retry after 5 seconds
+    loggedInUsername = null; // Reset login status
+    mainWindow?.webContents.send('status-update', { connected: false, wsConnected: false, error: 'Disconnected. Retrying...', serverIp: serverAddress, localHostname: os.hostname() });
+    setTimeout(connectToServer, 5000);
   });
 
   clientSocket.on('error', (error) => {
     console.error('[Client] WebSocket Client Error:', error.message);
-    // Don't nullify clientSocket here, 'close' event will handle it
-    mainWindow?.webContents.send('status-update', { connected: false, error: `Connection error: ${error.message}. Retrying...`, serverIp: serverAddress, localHostname: os.hostname() });
-    // The 'close' event should trigger the reconnect logic
+    mainWindow?.webContents.send('status-update', { connected: false, wsConnected: false, error: `Connection error: ${error.message}. Retrying...`, serverIp: serverAddress, localHostname: os.hostname() });
+    // Close event will handle reconnect
   });
 }
-
-// --- Network Discovery (REMOVED) ---
-
 
 // --- Electron App Lifecycle ---
 function createWindow() {
@@ -96,74 +108,79 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
-
   // mainWindow.webContents.openDevTools();
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  mainWindow.on('closed', () => { mainWindow = null; });
 
-  // Attempt to connect directly after window loads
   mainWindow.webContents.once('did-finish-load', () => {
-    connectToServer(); // Connect directly to the defined SERVER_URL
+    connectToServer(); // Connect WebSocket on load
   });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+app.whenReady().then(createWindow);
+app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
 app.on('quit', () => {
   console.log('[Client] App quitting...');
-  // No Bonjour cleanup needed
   if (clientSocket) {
       console.log("[Client] Closing WebSocket client connection...");
-      // Prevent automatic reconnection attempts on quit
-      const closeHandler = () => setTimeout(connectToServer, 5000); // Recreate the handler reference
-      clientSocket.removeEventListener('close', closeHandler); // Remove listener if added
+      const closeHandler = () => setTimeout(connectToServer, 5000);
+      clientSocket.removeEventListener('close', closeHandler);
       clientSocket.close();
   }
 });
 
 // --- IPC Handlers ---
-ipcMain.on('send-message', (event, messageText) => {
-  const senderHostname = os.hostname();
-  const messageData = {
-    type: 'chat',
-    id: `${Date.now()}-${Math.random().toString(36).substring(7)}`,
-    text: messageText,
-    sender: senderHostname,
-    timestamp: Date.now()
-  };
 
-  if (clientSocket && clientSocket.readyState === WebSocket.OPEN) {
-    console.log('[Client] Sending message:', messageData);
-    clientSocket.send(JSON.stringify(messageData));
-  } else {
-    console.log('[Client] Cannot send message: Not connected to server.');
-    mainWindow?.webContents.send('send-error', 'Not connected to chat server.');
-  }
+// Helper to send messages via WebSocket if connected
+function sendToServer(messageObject) {
+    if (clientSocket && clientSocket.readyState === WebSocket.OPEN) {
+        clientSocket.send(JSON.stringify(messageObject));
+        return true;
+    } else {
+        console.log('[Client] Cannot send message: Not connected to server.');
+        // Optionally inform renderer? Depends on context.
+        // mainWindow?.webContents.send('send-error', 'Not connected to chat server.');
+        return false;
+    }
+}
+
+// Signup Request
+ipcMain.on('signup-request', (event, credentials) => {
+    console.log('[IPC] Received signup request');
+    sendToServer({ type: 'signup', ...credentials });
+    // Response is handled by the 'message' listener forwarding 'signup-response'
 });
 
+// Login Request
+ipcMain.on('login-request', (event, credentials) => {
+    console.log('[IPC] Received login request');
+    sendToServer({ type: 'login', ...credentials });
+    // Response is handled by the 'message' listener forwarding 'login-response'
+});
+
+// Chat Message Request
+ipcMain.on('send-message', (event, messageText) => {
+    // No change needed here, server uses associated username from login
+    if (loggedInUsername) { // Only send if logged in
+         console.log('[IPC] Received chat message request');
+         sendToServer({ type: 'chat', text: messageText });
+    } else {
+         console.warn('[IPC] Attempted to send chat message while not logged in.');
+         mainWindow?.webContents.send('send-error', 'You must be logged in to send messages.');
+    }
+});
+
+// Status Request
 ipcMain.on('request-status', (event) => {
     event.reply('status-update', {
-        connected: clientSocket && clientSocket.readyState === WebSocket.OPEN,
+        connected: !!loggedInUsername, // Consider 'connected' as 'logged in' now
+        wsConnected: clientSocket && clientSocket.readyState === WebSocket.OPEN, // Actual socket state
         connecting: clientSocket && clientSocket.readyState === WebSocket.CONNECTING,
-        searching: false, // No longer searching
-        serverIp: serverAddress, // Show the target server URL
-        localHostname: os.hostname()
+        searching: false,
+        serverIp: serverAddress,
+        localHostname: os.hostname(),
+        username: loggedInUsername // Send username if logged in
     });
 });
-
-// Manual connect is removed as we connect to a fixed public URL

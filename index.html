@@ -2,29 +2,51 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
-    <meta http-equiv="X-Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
-    <title>Electron Chat App</title> <!-- Updated title -->
+    <title>Electron Chat App</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="status-bar">
-        Status: <span id="connection-status">Initializing...</span>
-        <span id="host-info"></span>
-        <!-- Manual connection elements removed as we connect to a fixed public URL -->
+    <!-- Login/Signup View -->
+    <div id="auth-view">
+        <div class="auth-container">
+            <h2 id="auth-title">Login</h2>
+            <div id="auth-error" class="error-message"></div> <!-- Area for auth errors -->
+
+            <div class="input-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="input-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+
+            <button id="login-button" class="auth-button">Login</button>
+            <button id="signup-button" class="auth-button">Sign Up</button>
+
+            <p id="toggle-auth-message">Don't have an account? <a href="#" id="toggle-signup">Sign up here</a>.</p>
+        </div>
     </div>
 
-    <div id="messages">
-        <!-- Chat messages will appear here -->
+    <!-- Chat View (Initially Hidden) -->
+    <div id="chat-view" style="display: none; height: 100vh; display: flex; flex-direction: column;">
+        <div id="status-bar">
+            Status: <span id="connection-status">Initializing...</span>
+            <span id="host-info"></span> <!-- Will show Server URL -->
+            <span id="user-info"></span> <!-- Will show logged in user -->
+        </div>
+
+        <div id="messages">
+            <!-- Chat messages will appear here -->
+        </div>
+
+        <div id="input-area">
+            <input type="text" id="message-input" placeholder="Type your message..." disabled>
+            <button id="send-button" disabled>Send</button>
+        </div>
     </div>
 
-    <div id="input-area">
-        <input type="text" id="message-input" placeholder="Type your message..." disabled> <!-- Start disabled -->
-        <button id="send-button" disabled>Send</button> <!-- Start disabled -->
-    </div>
-
-    <!-- Include the renderer script -->
     <script src="renderer.js"></script>
 </body>
 </html>
