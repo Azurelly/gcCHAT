@@ -1,7 +1,7 @@
 {
-  "name": "electron-chat-server",
+  "name": "gcchat-client",
   "version": "1.0.0",
-  "description": "Simple WebSocket chat server with MongoDB persistence and auth",
+  "description": "gcCHAT Client Application",
   "main": "main.js",
   "scripts": {
     "start": "node server.js",
@@ -35,8 +35,8 @@
     "node": ">=18.0.0"
   },
   "build": {
-    "appId": "com.example.electronchatapp",
-    "productName": "ElectronChatApp",
+    "appId": "com.example.gcchat",
+    "productName": "gcCHAT",
     "files": [
       "main.js",
       "preload.js",
