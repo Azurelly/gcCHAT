@@ -1,81 +1,96 @@
-/* General Body Styles */
+/* General Body & Font Styles */
 body {
-    font-family: sans-serif;
+    font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; /* Discord font stack */
     margin: 0;
     height: 100vh;
-    background-color: #f0f2f5; /* Light background */
-    display: flex; /* Needed for centering auth view */
-    justify-content: center; /* Center auth view horizontally */
-    align-items: center; /* Center auth view vertically */
+    background-color: #36393f; /* Discord dark background */
+    color: #dcddde; /* Discord light text */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 16px; /* Base font size */
+    overflow: hidden; /* Prevent body scrollbars */
 }
 
-/* Authentication View Styles */
+/* --- Authentication View Styles (Dark Mode) --- */
 #auth-view {
     width: 100%;
-    max-width: 400px; /* Limit auth form width */
-    padding: 30px;
-    background-color: #fff;
+    max-width: 450px;
+    padding: 40px;
+    background-color: #36393f; /* Match body */
     border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 .auth-container h2 {
     text-align: center;
     margin-bottom: 25px;
-    color: #333;
+    color: #fff; /* White title */
+    font-weight: 600;
 }
 
 .input-group {
-    margin-bottom: 15px;
+    margin-bottom: 20px;
 }
 
 .input-group label {
     display: block;
-    margin-bottom: 5px;
-    font-weight: bold;
-    color: #555;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #b9bbbe; /* Discord grey label */
+    font-size: 0.8em;
+    text-transform: uppercase;
 }
 
 .input-group input {
     width: 100%;
-    padding: 10px;
-    border: 1px solid #ccc;
+    padding: 12px;
+    border: 1px solid #202225; /* Darker border */
+    background-color: #202225; /* Dark input background */
+    color: #dcddde; /* Light text */
     border-radius: 4px;
-    box-sizing: border-box; /* Include padding and border in element's total width and height */
+    box-sizing: border-box;
+    font-size: 1em;
+}
+.input-group input:focus {
+    outline: none;
+    border-color: #7289da; /* Discord blurple focus */
 }
 
 .auth-button {
     width: 100%;
     padding: 12px;
-    background-color: #007bff;
+    background-color: #5865f2; /* Discord blurple button */
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
     font-size: 1em;
-    margin-top: 10px; /* Space above buttons */
+    font-weight: 500;
+    margin-top: 15px;
+    transition: background-color 0.17s ease;
 }
 
 .auth-button:hover {
-    background-color: #0056b3;
+    background-color: #4752c4; /* Darker blurple */
 }
 
 #signup-button {
-    background-color: #6c757d; /* Different color for signup */
+    background-color: #4f545c; /* Discord grey button */
 }
 #signup-button:hover {
-    background-color: #5a6268;
+    background-color: #5d6269;
 }
 
 #toggle-auth-message {
     text-align: center;
     margin-top: 20px;
     font-size: 0.9em;
-    color: #555;
+    color: #72767d; /* Lighter grey */
 }
 
 #toggle-auth-message a {
-    color: #007bff;
+    color: #00a8fc; /* Discord link blue */
     text-decoration: none;
     cursor: pointer;
 }
@@ -85,138 +100,177 @@ body {
 }
 
 .error-message {
-    color: #dc3545; /* Red for errors */
-    background-color: #f8d7da;
-    border: 1px solid #f5c6cb;
-    padding: 10px;
+    color: #f04747; /* Discord red */
+    /* background-color: rgba(240, 71, 71, 0.1); */ /* Optional subtle background */
+    /* border: 1px solid rgba(240, 71, 71, 0.3); */
+    padding: 10px 0; /* Padding top/bottom only */
     border-radius: 4px;
     margin-bottom: 15px;
     text-align: center;
     font-size: 0.9em;
-    display: none; /* Hidden by default */
+    display: none;
 }
 
 
-/* Chat View Styles (Mostly unchanged, ensure body styles don't conflict) */
+/* --- Chat View Styles (Dark Mode) --- */
 #chat-view {
-    /* These styles apply when chat-view is visible */
-    width: 100%; /* Take full width */
-    max-width: none; /* Override auth view max-width */
+    width: 100%;
+    max-width: none;
     height: 100vh;
-    background-color: #f4f4f4;
-    display: flex; /* Use flex for layout */
+    background-color: #36393f; /* Dark background */
+    display: flex;
     flex-direction: column;
-    padding: 0; /* Remove padding */
-    box-shadow: none; /* Remove shadow */
-    border-radius: 0; /* Remove border-radius */
+    padding: 0;
+    box-shadow: none;
+    border-radius: 0;
 }
 
 #status-bar {
-    padding: 8px 12px; /* Adjusted padding */
-    background-color: #ddd;
-    border-bottom: 1px solid #ccc;
-    font-size: 0.9em;
+    padding: 8px 15px;
+    background-color: #2f3136; /* Slightly lighter dark */
+    border-bottom: 1px solid #202225; /* Darker border */
+    font-size: 0.85em;
     display: flex;
     align-items: center;
     gap: 15px;
-    flex-shrink: 0; /* Prevent status bar from shrinking */
+    flex-shrink: 0;
+    color: #b9bbbe; /* Grey text */
 }
 
 #connection-status {
-    font-weight: bold;
+    font-weight: 500;
 }
 
-#host-info, #user-info { /* Style user info span */
-    font-style: italic;
-    color: #555;
+#host-info, #user-info {
+    font-style: normal; /* Remove italic */
+    color: #72767d; /* Lighter grey */
 }
 #user-info {
-    margin-left: auto; /* Push user info to the right */
+    margin-left: auto;
+    font-weight: 500;
+    color: #fff; /* White username */
+}
+#user-info::before {
+    content: "Logged in as: ";
+    color: #72767d;
+    font-weight: normal;
 }
 
 
 #messages {
     flex-grow: 1;
     overflow-y: auto;
-    padding: 10px;
-    background-color: #fff;
-    border-bottom: 1px solid #ccc;
+    padding: 0 20px 10px 20px; /* Padding left/right */
+    background-color: #36393f; /* Match background */
+    border-bottom: none; /* Remove border */
+    display: flex;
+    flex-direction: column; /* Stack messages */
 }
 
+/* Message Grouping (Basic - real Discord groups by time/user) */
 .message {
-    margin-bottom: 8px;
-    padding: 8px 12px;
-    border-radius: 15px;
-    max-width: 70%;
-    word-wrap: break-word;
-    display: flex; /* Use flex for better alignment */
-    flex-direction: column; /* Stack sender/text/timestamp */
+    display: flex; /* Use flex for avatar + content */
+    align-items: flex-start; /* Align avatar top */
+    padding: 8px 0; /* Vertical padding */
+    margin-top: 5px; /* Space between messages */
+    /* Remove bubble styles */
+    /* background-color: transparent; */
+    /* border-radius: 0; */
+    /* max-width: 100%; */
+    /* margin-left: 0; */
+    /* margin-right: 0; */
+}
+
+.message-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: #7289da; /* Default avatar color */
+    color: #fff;
+    font-weight: 500;
+    font-size: 1.2em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 15px;
+    flex-shrink: 0; /* Prevent avatar shrinking */
+    text-transform: uppercase;
+}
+
+.message-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.message-header {
+    display: flex;
+    align-items: baseline; /* Align username and timestamp */
+    margin-bottom: 3px;
 }
 
 .message .sender {
-    font-weight: bold;
-    font-size: 0.8em;
-    color: #333;
-    margin-bottom: 2px;
+    font-weight: 500; /* Medium weight */
+    color: #fff; /* White sender name */
+    margin-right: 8px;
+    font-size: 1em; /* Match base font size */
 }
 
 .message .timestamp {
-    font-size: 0.7em;
-    color: #888;
-    align-self: flex-end; /* Align timestamp to the right within the flex column */
-    margin-top: 2px;
+    font-size: 0.75em; /* Smaller timestamp */
+    color: #72767d; /* Grey timestamp */
+    /* Remove float */
+    /* margin-left: 0; */
 }
 
-.message-local {
-    background-color: #dcf8c6;
-    margin-left: auto;
-    border-bottom-right-radius: 5px;
-    align-items: flex-end; /* Align content to the right */
+.message-text {
+    line-height: 1.375; /* Discord line height */
+    color: #dcddde; /* Standard text color */
+    word-wrap: break-word;
+    white-space: pre-wrap; /* Preserve whitespace/newlines */
 }
 
-.message-remote {
-    background-color: #e0e0e0;
-    margin-right: auto;
-    border-bottom-left-radius: 5px;
-    align-items: flex-start; /* Align content to the left */
-}
-.message-remote .sender {
-    color: #0056b3; /* Different color for remote sender */
-}
+/* Remove specific local/remote styling */
+/* .message-local { ... } */
+/* .message-remote { ... } */
 
 
+/* Input Area Styles */
 #input-area {
     display: flex;
-    padding: 10px;
-    background-color: #eee;
-    flex-shrink: 0; /* Prevent input area from shrinking */
+    padding: 0 20px 20px 20px; /* Padding around input */
+    background-color: #36393f; /* Match background */
+    flex-shrink: 0;
+    border-top: 1px solid #40444b; /* Separator line */
+    margin-top: 8px; /* Space above input area */
 }
 
 #message-input {
     flex-grow: 1;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    margin-right: 10px;
-}
-
-#send-button { /* Removed connect-button styling */
-    padding: 10px 15px;
-    background-color: #007bff;
-    color: white;
+    padding: 11px 10px;
     border: none;
-    border-radius: 5px;
-    cursor: pointer;
+    border-radius: 8px;
+    margin-right: 0; /* Remove margin */
+    background-color: #40444b; /* Darker input background */
+    color: #dcddde;
+    font-size: 1em;
+    line-height: 1.375;
+    resize: none; /* Prevent manual resize */
+}
+#message-input:focus {
+    outline: none;
+}
+#message-input::placeholder {
+    color: #72767d;
 }
 
-#send-button:hover {
-    background-color: #0056b3;
+
+#send-button {
+    display: none; /* Hide default send button, rely on Enter key */
 }
 
-#send-button:disabled { /* Style for disabled button */
-    background-color: #aaa;
-    cursor: not-allowed;
-}
-#message-input:disabled { /* Style for disabled input */
-     background-color: #f8f8f8;
+#send-button:disabled,
+#message-input:disabled {
+     background-color: #40444b;
+     cursor: not-allowed;
+     opacity: 0.7;
 }
