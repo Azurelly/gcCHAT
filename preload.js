@@ -22,10 +22,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // User Profile & List
   getUserProfile: (username) => ipcRenderer.send('get-user-profile', username),
-  // getAllUsers: () => ipcRenderer.send('get-all-users'), // No longer needed to request separately
   onUserProfileResponse: (callback) => ipcRenderer.on('user-profile-response', (_event, value) => callback(value)),
-  // onAllUsersList: (callback) => ipcRenderer.on('all-users-list', (_event, value) => callback(value)), // Renamed
-  onUserListUpdate: (callback) => ipcRenderer.on('user-list-update', (_event, value) => callback(value)), // Listen for combined list { all, online }
+  onUserListUpdate: (callback) => ipcRenderer.on('user-list-update', (_event, value) => callback(value)),
+
+  // Party Mode & Typing
+  togglePartyMode: () => ipcRenderer.send('toggle-party-mode'), // Send toggle request
+  startTyping: () => ipcRenderer.send('start-typing'),
+  stopTyping: () => ipcRenderer.send('stop-typing'),
+  onPartyModeToggle: (callback) => ipcRenderer.on('party-mode-toggle', (_event, value) => callback(value)), // Listen for toggle state
+  onTypingUpdate: (callback) => ipcRenderer.on('typing-update', (_event, value) => callback(value)), // Listen for typing users
 
   // Context Menus
   showChannelContextMenu: (channelName) => ipcRenderer.send('show-channel-context-menu', channelName),
@@ -51,8 +56,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('load-history');
     ipcRenderer.removeAllListeners('channel-list');
     ipcRenderer.removeAllListeners('user-profile-response');
-    // ipcRenderer.removeAllListeners('all-users-list'); // Removed
-    ipcRenderer.removeAllListeners('user-list-update'); // Add cleanup
+    ipcRenderer.removeAllListeners('user-list-update');
+    ipcRenderer.removeAllListeners('party-mode-toggle'); // Add cleanup
+    ipcRenderer.removeAllListeners('typing-update'); // Add cleanup
     ipcRenderer.removeAllListeners('prompt-create-channel');
     ipcRenderer.removeAllListeners('confirm-delete-channel');
     ipcRenderer.removeAllListeners('edit-message-prompt');
@@ -62,4 +68,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
   }
 });
 
-console.log('preload.js updated for user list broadcast');
+console.log('preload.js updated with party mode listener');
