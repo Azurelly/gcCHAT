@@ -635,6 +635,78 @@ function handleStopTyping(ws, _data) {
   }
 }
 
+// --- New Handlers for Profile Settings ---
+async function handleGetOwnProfile(ws) {
+  const userInfo = clients.get(ws);
+  if (!userInfo || !userInfo.username) {
+    // Should not happen if called after login, but good practice to check
+    return ws.send(
+      JSON.stringify({ type: 'error', message: 'Not logged in' })
+    );
+  }
+  try {
+    const profile = await usersCollection.findOne(
+      { username: userInfo.username },
+      // Only send necessary fields for the settings modal
+      { projection: { username: 1, aboutMe: 1, profilePicture: 1, _id: 0 } }
+    );
+    if (profile) {
+      ws.send(
+        JSON.stringify({ type: 'own-profile-response', profile: profile })
+      );
+    } else {
+      // Should ideally not happen if user is logged in
+      console.error(`[Server] Could not find profile for logged-in user: ${userInfo.username}`);
+      ws.send(
+        JSON.stringify({ type: 'own-profile-response', profile: null }) // Send null profile on error
+      );
+    }
+  } catch (error) {
+    console.error(`[Server] Error fetching own profile for ${userInfo.username}:`, error);
+    ws.send(
+      JSON.stringify({ type: 'own-profile-response', profile: null }) // Send null profile on error
+    );
+  }
+}
+
+async function handleUpdateAboutMe(ws, data) {
+  const userInfo = clients.get(ws);
+  if (!userInfo || !userInfo.username) {
+    return ws.send(
+      JSON.stringify({ type: 'error', message: 'Not logged in' })
+    );
+  }
+  const newAboutMe = data.aboutMe?.trim() ?? ''; // Get text, trim, default to empty string
+  // Add server-side length validation (matching HTML maxlength)
+  if (newAboutMe.length > 190) {
+     return ws.send(
+      JSON.stringify({ type: 'error', message: 'About Me text exceeds 190 characters.' })
+    );
+  }
+
+  try {
+    const updateResult = await usersCollection.updateOne(
+      { username: userInfo.username },
+      { $set: { aboutMe: newAboutMe } }
+    );
+    if (updateResult.modifiedCount === 1) {
+      console.log(`[Server] User ${userInfo.username} updated their About Me.`);
+      // Optionally send a success confirmation back
+      // ws.send(JSON.stringify({ type: 'about-me-update-success' }));
+    } else if (updateResult.matchedCount === 1 && updateResult.modifiedCount === 0) {
+      console.log(`[Server] User ${userInfo.username} About Me unchanged.`);
+      // Optionally send confirmation even if unchanged
+    } else {
+       console.warn(`[Server] Failed to update About Me for user ${userInfo.username}. Matched: ${updateResult.matchedCount}`);
+       ws.send(JSON.stringify({ type: 'error', message: 'Failed to update profile.' }));
+    }
+  } catch (error) {
+     console.error(`[Server] Error updating About Me for ${userInfo.username}:`, error);
+     ws.send(JSON.stringify({ type: 'error', message: 'Server error updating profile.' }));
+  }
+}
+
+
 // --- New Handler for Per-User Party Mode ---
 function handleToggleUserPartyMode(ws, data) {
   const adminInfo = clients.get(ws);
@@ -737,7 +809,13 @@ async function startServer() {
             await handleDeleteChannel(ws, parsedMessage);
             break;
           case 'get-user-profile':
-            await handleGetUserProfile(ws, parsedMessage);
+            await handleGetUserProfile(ws, parsedMessage); // For viewing others
+            break;
+          case 'get-own-profile': // New: For settings modal
+            await handleGetOwnProfile(ws);
+            break;
+          case 'update-about-me': // New: For saving settings
+            await handleUpdateAboutMe(ws, parsedMessage);
             break;
           case 'edit-message':
             await handleEditMessage(ws, parsedMessage);

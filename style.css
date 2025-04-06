@@ -174,18 +174,27 @@ body {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 10px; /* Add gap */
+  gap: 8px; /* Adjusted gap */
+  height: 52px; /* Give it a fixed height */
+  box-sizing: border-box;
 }
-#user-info {
+#user-area .user-avatar {
+  /* Reuse existing user-avatar style */
+  width: 32px;
+  height: 32px;
+  font-size: 1em;
+  flex-shrink: 0;
+}
+#user-area-username {
   font-weight: 500;
   color: #fff;
-  margin-left: 0;
-  flex-grow: 1; /* Allow username to take space */
+  flex-grow: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 0.9em;
 }
-#party-mode-button {
+#user-settings-button {
   background: none;
   border: none;
   color: #b9bbbe;
@@ -193,14 +202,12 @@ body {
   cursor: pointer;
   padding: 5px;
   line-height: 1;
-  border-radius: 3px;
+  border-radius: 5px;
+  flex-shrink: 0;
 }
-#party-mode-button:hover {
+#user-settings-button:hover {
   background-color: #3a3c43;
   color: #fff;
-}
-#party-mode-button.active {
-  color: #43b581; /* Green when active */
 }
 
 /* Main Content Area Styles */
@@ -558,7 +565,8 @@ body {
 }
 
 /* --- Profile Modal Specific Styles --- */
-#profile-modal {
+#profile-modal,
+#profile-settings-modal {
   padding: 0;
 }
 .profile-header {
@@ -604,6 +612,31 @@ body {
   line-height: 1.4;
   min-height: 1.4em;
   white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* --- Profile Settings Modal Specific Styles --- */
+#profile-settings-modal .input-group textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #202225;
+  background-color: #202225;
+  color: #dcddde;
+  border-radius: 4px;
+  box-sizing: border-box;
+  font-size: 0.9em;
+  resize: vertical;
+  min-height: 80px;
+}
+#profile-settings-modal .input-group textarea:focus {
+  outline: none;
+  border-color: #7289da;
+}
+#profile-settings-modal .input-group small {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.75em;
+  color: #72767d;
 }
 
 /* --- Delete Channel Modal Specific Styles --- */

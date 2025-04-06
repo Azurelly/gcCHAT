@@ -60,8 +60,26 @@ const submitDeleteChannelButton = document.getElementById(
 );
 const userListOnlineDiv = document.getElementById('user-list-online');
 const userListOfflineDiv = document.getElementById('user-list-offline');
-// const onlineCountSpan = document.getElementById('online-count'); // Unused
-// const offlineCountSpan = document.getElementById('offline-count'); // Unused
+// New User Area Elements
+const userAreaAvatar = document.getElementById('user-area-avatar');
+const userAreaUsername = document.getElementById('user-area-username');
+const userSettingsButton = document.getElementById('user-settings-button');
+// New Settings Modal Elements
+const profileSettingsModalBackdrop = document.getElementById(
+  'profile-settings-modal-backdrop'
+);
+const closeProfileSettingsModalButton = document.getElementById(
+  'close-profile-settings-modal'
+);
+const settingsAboutMeInput = document.getElementById(
+  'settings-about-me-input'
+);
+const cancelProfileSettingsButton = document.getElementById(
+  'cancel-profile-settings-button'
+);
+const saveProfileSettingsButton = document.getElementById(
+  'save-profile-settings-button'
+);
 
 // --- State ---
 let localUsername = '';
@@ -177,6 +195,34 @@ submitDeleteChannelButton.addEventListener('click', () => {
     window.electronAPI.deleteChannel(channelToDelete);
     hideDeleteChannelModal();
   }
+});
+
+// New Settings Modal Logic
+function showProfileSettingsModal() {
+  // Request current profile data before showing
+  window.electronAPI.requestOwnProfile();
+  profileSettingsModalBackdrop.style.display = 'flex';
+  settingsAboutMeInput.focus(); // Focus the textarea
+}
+function hideProfileSettingsModal() {
+  profileSettingsModalBackdrop.style.display = 'none';
+}
+closeProfileSettingsModalButton.addEventListener(
+  'click',
+  hideProfileSettingsModal
+);
+cancelProfileSettingsButton.addEventListener(
+  'click',
+  hideProfileSettingsModal
+);
+profileSettingsModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === profileSettingsModalBackdrop) hideProfileSettingsModal();
+});
+saveProfileSettingsButton.addEventListener('click', () => {
+  const newAboutMe = settingsAboutMeInput.value.trim();
+  // Add validation if needed (e.g., length check already handled by maxlength)
+  window.electronAPI.saveAboutMe(newAboutMe);
+  hideProfileSettingsModal(); // Close modal after saving
 });
 
 // --- Channel UI ---
@@ -443,43 +489,58 @@ function updateStatus(status) {
   if (status.isAdmin !== undefined) isAdmin = status.isAdmin;
   if (status.currentChannel) currentChannel = status.currentChannel;
 
-  // Remove party mode button logic here, handled by party mode update listener
-  // partyModeButton.style.display = isAdmin ? 'block' : 'none';
-
   if (status.connected) {
     statusText = 'Online';
     serverInfoText = '';
-    userInfoText = `${localUsername}`;
+    // Update new user area
+    userAreaUsername.textContent = localUsername;
+    userAreaAvatar.textContent = localUsername.charAt(0)?.toUpperCase() || '?';
+    userAreaAvatar.style.backgroundColor = getAvatarColor(localUsername);
   } else if (status.wsConnected) {
     statusText = 'Authenticating...';
     serverInfoText = '';
-    userInfoText = '';
+    // Clear user area on disconnect/auth
+    userAreaUsername.textContent = 'Connecting...';
+    userAreaAvatar.textContent = '?';
+    userAreaAvatar.style.backgroundColor = '#7289da';
     if (authView.style.display === 'none') showAuthView(isLoginMode);
   } else if (status.connecting) {
     statusText = `Connecting...`;
     serverInfoText = '';
-    userInfoText = '';
+    userAreaUsername.textContent = 'Connecting...';
+    userAreaAvatar.textContent = '?';
+    userAreaAvatar.style.backgroundColor = '#7289da';
     if (authView.style.display === 'none') showAuthView(isLoginMode);
   } else if (status.error) {
     statusText = `Error: ${status.error}`;
     serverInfoText = '';
-    userInfoText = '';
+    userAreaUsername.textContent = 'Error';
+    userAreaAvatar.textContent = '!';
+    userAreaAvatar.style.backgroundColor = '#f04747';
     if (authView.style.display === 'none') showAuthView(isLoginMode);
   } else {
     statusText = 'Disconnected';
     serverInfoText = '';
-    userInfoText = '';
+    userAreaUsername.textContent = 'Offline';
+    userAreaAvatar.textContent = '?';
+    userAreaAvatar.style.backgroundColor = '#72767d';
     if (authView.style.display === 'none') showAuthView(isLoginMode);
   }
   connectionStatusSpan.textContent = statusText;
   hostInfoSpan.textContent = serverInfoText;
-  userInfoSpan.textContent = userInfoText;
+  // userInfoSpan.textContent = userInfoText; // Replaced by userAreaUsername
   currentChannelSpan.textContent = currentChannel || '...';
-  const isLoggedIn = !!localUsername;
+  const isLoggedIn = !!localUsername && status.connected; // Ensure connected status too
   messageInput.disabled = !isLoggedIn;
-  sendButton.disabled = !isLoggedIn;
-  if (isLoggedIn) updateChannelHighlight();
-  if (isLoggedIn) renderChannelList();
+  // sendButton.disabled = !isLoggedIn; // Send button removed
+  if (isLoggedIn) {
+    updateChannelHighlight();
+    renderChannelList(); // Render channels only when logged in
+    userSettingsButton.style.display = 'block'; // Show settings button
+  } else {
+    channelListDiv.innerHTML = ''; // Clear channels if not logged in
+    userSettingsButton.style.display = 'none'; // Hide settings button
+  }
 }
 
 // --- Typing Indicator ---
@@ -571,6 +632,7 @@ messageInput.addEventListener('input', () => {
   }
 });
 // Removed party mode button listener
+userSettingsButton.addEventListener('click', showProfileSettingsModal); // Add listener for settings button
 
 // --- IPC Listeners ---
 window.electronAPI.onSignupResponse((response) => {
@@ -590,7 +652,10 @@ window.electronAPI.onLoginResponse((response) => {
     currentChannel = 'general';
     hideAuthError();
     showChatView();
-    userInfoSpan.textContent = `${localUsername}`;
+    // Update new user area on login
+    userAreaUsername.textContent = localUsername;
+    userAreaAvatar.textContent = localUsername.charAt(0)?.toUpperCase() || '?';
+    userAreaAvatar.style.backgroundColor = getAvatarColor(localUsername);
     connectionStatusSpan.textContent = 'Online';
   } else {
     showAuthError(response.error || 'Login failed.');
@@ -681,6 +746,20 @@ window.electronAPI.onTypingUpdate((payload) => {
   /* ... no change ... */ console.log('Received typing update:', payload);
   currentlyTypingUsers = payload.typing || [];
   updateTypingIndicator();
+});
+
+// Listener for own profile data (for settings modal)
+window.electronAPI.onOwnProfileResponse((profile) => {
+  if (profile) {
+    settingsAboutMeInput.value = profile.aboutMe || '';
+    // Populate other fields here later if added
+  } else {
+    // Handle error case? Maybe disable save button?
+    console.error('Failed to load own profile data for settings.');
+    settingsAboutMeInput.value = 'Error loading profile.';
+    settingsAboutMeInput.disabled = true;
+    saveProfileSettingsButton.disabled = true;
+  }
 });
 
 // Request initial status

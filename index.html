@@ -40,15 +40,9 @@
         <div id="server-header">gcCHAT</div>
         <div id="channel-list"></div>
         <div id="user-area">
-          <span id="user-info"></span>
-          <button
-            id="party-mode-button"
-            title="Toggle Party Mode"
-            style="display: none"
-          >
-            🎉
-          </button>
-          <!-- Admin Only Button -->
+          <div id="user-area-avatar" class="user-avatar">?</div>
+          <div id="user-area-username">Username</div>
+          <button id="user-settings-button" title="User Settings">⚙️</button>
         </div>
       </div>
       <!-- Main Content -->
@@ -84,6 +78,7 @@
     </div>
 
     <!-- Modals -->
+    <!-- User Profile Modal (Existing) -->
     <div
       id="profile-modal-backdrop"
       class="modal-backdrop"
@@ -163,6 +158,42 @@
           </button>
           <button id="submit-delete-channel-button" class="modal-button danger">
             Delete Channel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Profile Settings Modal (New) -->
+    <div
+      id="profile-settings-modal-backdrop"
+      class="modal-backdrop"
+      style="display: none"
+    >
+      <div id="profile-settings-modal" class="modal">
+        <button id="close-profile-settings-modal" class="close-button">
+          &times;
+        </button>
+        <h3>User Settings</h3>
+        <div class="input-group">
+          <label for="settings-about-me-input">About Me</label>
+          <textarea
+            id="settings-about-me-input"
+            rows="4"
+            maxlength="190"
+            placeholder="Tell us about yourself!"
+          ></textarea>
+          <small>Max 190 characters</small>
+        </div>
+        <!-- Add other settings here later -->
+        <div class="modal-actions">
+          <button
+            id="cancel-profile-settings-button"
+            class="modal-button secondary"
+          >
+            Cancel
+          </button>
+          <button id="save-profile-settings-button" class="modal-button primary">
+            Save Changes
           </button>
         </div>
       </div>

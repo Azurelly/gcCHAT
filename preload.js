@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('user-profile-response', (_event, value) => callback(value)),
   onUserListUpdate: (callback) =>
     ipcRenderer.on('user-list-update', (_event, value) => callback(value)),
+  // New: Own Profile Settings
+  requestOwnProfile: () => ipcRenderer.send('request-own-profile'),
+  saveAboutMe: (aboutMeText) => ipcRenderer.send('save-about-me', aboutMeText),
+  onOwnProfileResponse: (callback) =>
+    ipcRenderer.on('own-profile-response', (_event, value) => callback(value)),
 
   // Party Mode & Typing
   toggleUserPartyMode: (username) =>
@@ -87,8 +92,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('load-history');
     ipcRenderer.removeAllListeners('channel-list');
     ipcRenderer.removeAllListeners('user-profile-response');
+    ipcRenderer.removeAllListeners('own-profile-response'); // Add cleanup
     ipcRenderer.removeAllListeners('user-list-update');
-    ipcRenderer.removeAllListeners('party-mode-update'); // Add cleanup
+    ipcRenderer.removeAllListeners('party-mode-update');
     ipcRenderer.removeAllListeners('typing-update');
     ipcRenderer.removeAllListeners('prompt-create-channel');
     ipcRenderer.removeAllListeners('confirm-delete-channel');

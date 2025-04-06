@@ -21,7 +21,7 @@ const __dirname = path.dirname(__filename);
 
 // --- WebSocket Client Logic ---
 function connectToServer() {
-  /* ... no change ... */ if (
+  if (
     clientSocket &&
     (clientSocket.readyState === WebSocket.OPEN ||
       clientSocket.readyState === WebSocket.CONNECTING)
@@ -60,6 +60,7 @@ function connectToServer() {
   clientSocket.on('message', (message) => {
     try {
       const parsedMessage = JSON.parse(message);
+      // console.log('[Client] Received:', parsedMessage); // Optional: Log all messages
       switch (parsedMessage.type) {
         case 'history':
           mainWindow?.webContents.send('load-history', parsedMessage);
@@ -71,7 +72,7 @@ function connectToServer() {
           if (parsedMessage.success) {
             loggedInUsername = parsedMessage.username;
             isAdmin = parsedMessage.isAdmin || false;
-            currentChannel = 'general';
+            currentChannel = 'general'; // Reset channel on login
             console.log(
               `[Client] Login successful for ${loggedInUsername} (Admin: ${isAdmin})`
             );
@@ -88,8 +89,11 @@ function connectToServer() {
         case 'channel-list':
           mainWindow?.webContents.send('channel-list', parsedMessage);
           break;
-        case 'user-profile-response':
+        case 'user-profile-response': // For viewing other users
           mainWindow?.webContents.send('user-profile-response', parsedMessage);
+          break;
+        case 'own-profile-response': // For settings modal (from server)
+          mainWindow?.webContents.send('own-profile-response', parsedMessage.profile);
           break;
         case 'message-edited':
           mainWindow?.webContents.send('message-edited', parsedMessage.payload);
@@ -112,10 +116,10 @@ function connectToServer() {
             parsedMessage.payload
           );
           break;
-        /* Relay party mode update */ case 'typing-update':
+        case 'typing-update':
           mainWindow?.webContents.send('typing-update', parsedMessage.payload);
           break;
-        case 'error':
+        case 'error': // Server-side errors (e.g., permission denied)
           mainWindow?.webContents.send('error', parsedMessage);
           break;
         default:
@@ -146,6 +150,7 @@ function connectToServer() {
       serverIp: serverAddress,
       localHostname: os.hostname(),
     });
+    // Use exponential backoff or similar for retries in production
     setTimeout(connectToServer, 5000);
   });
   clientSocket.on('error', (error) => {
@@ -157,67 +162,84 @@ function connectToServer() {
       serverIp: serverAddress,
       localHostname: os.hostname(),
     });
+    // Don't retry immediately on error, let 'close' handle retries
   });
 }
 
 // --- Electron App Lifecycle ---
 function createWindow() {
-  /* ... no change ... */ mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 700,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
+      contextIsolation: true, // Recommended for security
+      nodeIntegration: false, // Recommended for security
     },
+    title: 'gcCHAT', // Set window title
   });
+
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
-  mainWindow.setMenuBarVisibility(false);
+  mainWindow.setMenuBarVisibility(false); // Remove default menu bar
+
+  // Open DevTools automatically on start
   mainWindow.webContents.openDevTools();
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Connect after the window content has finished loading
   mainWindow.webContents.once('did-finish-load', () => {
     connectToServer();
   });
 }
+
 app.whenReady().then(createWindow);
+
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
 app.on('quit', () => {
-  /* ... no change ... */ console.log('[Client] App quitting...');
+  console.log('[Client] App quitting...');
   if (clientSocket) {
     console.log('[Client] Closing WebSocket client connection...');
-    const closeHandler = () => setTimeout(connectToServer, 5000);
-    clientSocket.removeEventListener('close', closeHandler);
+    // Remove listeners before closing to prevent immediate reconnect attempts
+    clientSocket.removeAllListeners('close');
+    clientSocket.removeAllListeners('error');
     clientSocket.close();
   }
 });
 
 // --- IPC Handlers ---
 function sendToServer(messageObject) {
-  /* ... no change ... */ if (
-    clientSocket &&
-    clientSocket.readyState === WebSocket.OPEN
-  ) {
+  if (clientSocket && clientSocket.readyState === WebSocket.OPEN) {
     clientSocket.send(JSON.stringify(messageObject));
+    // console.log('[Client] Sent:', messageObject); // Optional: Log sent messages
     return true;
   } else {
     console.log('[Client] Cannot send message: Not connected to server.');
+    // Optionally notify the renderer process
+    mainWindow?.webContents.send('send-error', 'Not connected to server.');
     return false;
   }
 }
-ipcMain.on('signup-request', (event, credentials) =>
+
+// Auth
+ipcMain.on('signup-request', (_event, credentials) =>
   sendToServer({ type: 'signup', ...credentials })
 );
-ipcMain.on('login-request', (event, credentials) =>
+ipcMain.on('login-request', (_event, credentials) =>
   sendToServer({ type: 'login', ...credentials })
 );
-ipcMain.on('send-message', (event, messageText) => {
+
+// Chat & Channels
+ipcMain.on('send-message', (_event, messageText) => {
   if (loggedInUsername && currentChannel) {
     sendToServer({ type: 'chat', text: messageText });
   } else {
@@ -227,14 +249,14 @@ ipcMain.on('send-message', (event, messageText) => {
     );
   }
 });
-ipcMain.on('switch-channel', (event, channelName) => {
+ipcMain.on('switch-channel', (_event, channelName) => {
   if (loggedInUsername) {
     if (sendToServer({ type: 'switch-channel', channel: channelName })) {
-      currentChannel = channelName;
+      currentChannel = channelName; // Update local state optimistically
     }
   }
 });
-ipcMain.on('create-channel', (event, channelName) => {
+ipcMain.on('create-channel', (_event, channelName) => {
   if (isAdmin) {
     sendToServer({ type: 'create-channel', name: channelName });
   } else {
@@ -243,7 +265,7 @@ ipcMain.on('create-channel', (event, channelName) => {
     });
   }
 });
-ipcMain.on('delete-channel', (event, channelName) => {
+ipcMain.on('delete-channel', (_event, channelName) => {
   if (isAdmin) {
     sendToServer({ type: 'delete-channel', channel: channelName });
   } else {
@@ -252,12 +274,14 @@ ipcMain.on('delete-channel', (event, channelName) => {
     });
   }
 });
-ipcMain.on('get-user-profile', (event, username) => {
+
+// User Profile & List
+ipcMain.on('get-user-profile', (_event, username) => {
   if (loggedInUsername) {
     sendToServer({ type: 'get-user-profile', username: username });
   }
 });
-ipcMain.on('edit-message', (event, { messageId, newText }) => {
+ipcMain.on('edit-message', (_event, { messageId, newText }) => {
   if (loggedInUsername) {
     sendToServer({
       type: 'edit-message',
@@ -266,26 +290,27 @@ ipcMain.on('edit-message', (event, { messageId, newText }) => {
     });
   }
 });
-ipcMain.on('delete-message', (event, { messageId }) => {
+ipcMain.on('delete-message', (_event, { messageId }) => {
   if (loggedInUsername) {
     sendToServer({ type: 'delete-message', messageId: messageId });
   }
 });
-ipcMain.on('start-typing', (event) => {
+
+// Typing Indicators
+ipcMain.on('start-typing', (_event) => {
   if (loggedInUsername) {
     sendToServer({ type: 'start-typing' });
   }
 });
-ipcMain.on('stop-typing', (event) => {
+ipcMain.on('stop-typing', (_event) => {
   if (loggedInUsername) {
     sendToServer({ type: 'stop-typing' });
   }
 });
 
 // Per-User Party Mode IPC
-ipcMain.on('toggle-user-party-mode', (event, { username }) => {
+ipcMain.on('toggle-user-party-mode', (_event, { username }) => {
   if (isAdmin) {
-    // Only admins can toggle
     sendToServer({ type: 'toggle-user-party-mode', username: username });
   } else {
     mainWindow?.webContents.send('error', {
@@ -296,7 +321,7 @@ ipcMain.on('toggle-user-party-mode', (event, { username }) => {
 
 // Context Menu IPC
 ipcMain.on('show-sidebar-context-menu', (_event) => {
-  /* ... no change ... */ if (!isAdmin) return;
+  if (!isAdmin) return;
   const template = [
     {
       label: 'Create Channel',
@@ -309,7 +334,7 @@ ipcMain.on('show-sidebar-context-menu', (_event) => {
   menu.popup({ window: mainWindow });
 });
 ipcMain.on('show-channel-context-menu', (_event, channelName) => {
-  /* ... no change ... */ if (!isAdmin || channelName === 'general') return;
+  if (!isAdmin || channelName === 'general') return; // Cannot delete general
   const template = [
     {
       label: `Delete #${channelName}`,
@@ -324,7 +349,7 @@ ipcMain.on('show-channel-context-menu', (_event, channelName) => {
 ipcMain.on(
   'show-message-context-menu',
   (_event, { messageId, isOwnMessage }) => {
-    /* ... no change ... */ const template = [];
+    const template = [];
     if (isOwnMessage) {
       template.push(
         {
@@ -337,12 +362,14 @@ ipcMain.on(
         {
           label: 'Delete Message',
           click: () => {
+            // Send delete request directly
             sendToServer({ type: 'delete-message', messageId: messageId });
           },
         }
       );
     } else {
-      template.push({ label: 'Copy Message ID (soon)', enabled: false });
+      // Add options for other users' messages later if needed
+      // template.push({ label: 'Copy Message ID (soon)', enabled: false });
     }
     if (template.length > 0) {
       const menu = Menu.buildFromTemplate(template);
@@ -350,8 +377,6 @@ ipcMain.on(
     }
   }
 );
-
-// New: User Context Menu
 ipcMain.on('show-user-context-menu', (_event, { username }) => {
   const template = [
     {
@@ -363,32 +388,40 @@ ipcMain.on('show-user-context-menu', (_event, { username }) => {
   ];
   // Add admin-only options
   if (isAdmin && username !== loggedInUsername) {
-    // Can't party mode self
     template.push({ type: 'separator' });
     template.push({
-      label: 'Toggle Party Mode', // Label could be dynamic based on current state if needed
+      label: 'Toggle Party Mode',
       click: () => {
         sendToServer({ type: 'toggle-user-party-mode', username: username });
       },
     });
     // Add Kick/Ban later?
-    // template.push({ type: 'separator' });
-    // template.push({ label: 'Kick (soon)', enabled: false });
-    // template.push({ label: 'Ban (soon)', enabled: false });
   }
-
   const menu = Menu.buildFromTemplate(template);
   menu.popup({ window: mainWindow });
 });
 
+// New: Profile Settings IPC Handlers
+ipcMain.on('request-own-profile', (_event) => {
+  if (loggedInUsername) {
+    sendToServer({ type: 'get-own-profile' }); // Request own profile data
+  }
+});
+ipcMain.on('save-about-me', (_event, aboutMeText) => {
+  if (loggedInUsername) {
+    sendToServer({ type: 'update-about-me', aboutMe: aboutMeText });
+  }
+});
+
 // Status Request IPC
 ipcMain.on('request-status', (_event) => {
-  /* ... no change ... */ _event.reply('status-update', {
-    connected: !!loggedInUsername,
+  // Reply immediately with current known state
+  _event.reply('status-update', {
+    connected: !!loggedInUsername, // True only if logged in
     wsConnected: clientSocket && clientSocket.readyState === WebSocket.OPEN,
     connecting:
       clientSocket && clientSocket.readyState === WebSocket.CONNECTING,
-    searching: false,
+    searching: false, // Bonjour removed
     serverIp: serverAddress,
     localHostname: os.hostname(),
     username: loggedInUsername,
