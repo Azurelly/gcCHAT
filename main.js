@@ -1,3 +1,9 @@
+  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  mainWindow.setMenuBarVisibility(false); // Hide the default menu bar
+
+  mainWindow.webContents.openDevTools(); // Open DevTools automatically
+
+  mainWindow.on('closed', () => { mainWindow = null; });
 import { app, BrowserWindow, ipcMain, Menu, MenuItem } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
