@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
-    <title>gc CHAT</title>
+    <title>gcCHAT</title> <!-- Updated title -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -24,26 +24,27 @@
     <div id="chat-view" style="display: none;">
         <!-- Channel Sidebar -->
         <div id="sidebar">
-            <div id="server-header">GC Chat</div>
+            <div id="server-header">gcCHAT</div>
             <div id="channel-list"></div>
-            <div id="user-area"> <span id="user-info"></span> </div>
+            <div id="user-area">
+                <span id="user-info"></span>
+                <button id="party-mode-button" title="Toggle Party Mode" style="display: none;">🎉</button> <!-- Admin Only Button -->
+            </div>
         </div>
         <!-- Main Content -->
         <div id="main-content">
             <div id="status-bar"> Status: <span id="connection-status"></span> <span id="current-channel-name"></span> <span id="host-info"></span> </div>
             <div id="messages"></div>
+            <!-- Typing Indicator -->
+            <div id="typing-indicator">
+                <!-- Content set by JS -->
+            </div>
             <div id="input-area"> <input type="text" id="message-input" placeholder="Type your message..." disabled> <button id="send-button" disabled>Send</button> </div>
         </div>
         <!-- User List Sidebar -->
         <div id="user-list-sidebar">
-            <div id="user-list-online">
-                <h4>Online — <span id="online-count">0</span></h4>
-                <!-- Online users added here -->
-            </div>
-            <div id="user-list-offline">
-                 <h4>Offline — <span id="offline-count">0</span></h4>
-                 <!-- Offline users added here -->
-            </div>
+            <div id="user-list-online"> <h4>Online — <span id="online-count">0</span></h4> </div>
+            <div id="user-list-offline"> <h4>Offline — <span id="offline-count">0</span></h4> </div>
         </div>
     </div>
 

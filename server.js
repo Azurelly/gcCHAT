@@ -18,6 +18,7 @@ const USERS_COLLECTION_NAME = 'users';
 const CHANNELS_COLLECTION_NAME = 'channels';
 const SALT_ROUNDS = 10;
 const DEFAULT_CHANNEL = 'general';
+const TYPING_TIMEOUT_MS = 3000; // User stops typing after 3 seconds of inactivity
 
 // --- State ---
 let clients = new Map(); // ws -> { username, currentChannel, isAdmin }
@@ -27,6 +28,8 @@ let messagesCollection;
 let usersCollection;
 let channelsCollection;
 let availableChannels = [DEFAULT_CHANNEL];
+let partyModeActive = false; // Party mode state
+let typingUsers = new Map(); // username -> timeoutId
 
 // --- MongoDB Connection ---
 async function connectDB() { /* ... no change ... */ if (!MONGODB_URI || MONGODB_URI.includes("<") || MONGODB_URI.includes(">")) { console.error("[Server] ERROR: MongoDB connection string is missing, invalid, or contains a placeholder password."); process.exit(1); } try { const client = new MongoClient(MONGODB_URI, { serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true } }); await client.connect(); db = client.db(DB_NAME); messagesCollection = db.collection(MESSAGES_COLLECTION_NAME); usersCollection = db.collection(USERS_COLLECTION_NAME); channelsCollection = db.collection(CHANNELS_COLLECTION_NAME); console.log("[Server] Successfully connected to MongoDB Atlas!"); await messagesCollection.createIndex({ timestamp: 1 }); await messagesCollection.createIndex({ channel: 1, timestamp: 1 }); await usersCollection.createIndex({ username: 1 }, { unique: true }); await channelsCollection.createIndex({ name: 1 }, { unique: true }); await ensureDefaultChannel(); await loadChannels(); console.log("[Server] Database indexes and channels checked/created."); } catch (error) { console.error("[Server] Failed to connect to MongoDB:", error); process.exit(1); } }
@@ -42,50 +45,17 @@ async function saveMessageToDB(messageData) { /* ... no change ... */ if (!messa
 // --- Broadcast Logic ---
 function broadcast(message) { /* ... no change ... */ const messageString = JSON.stringify(message); clients.forEach((userInfo, ws) => { if (userInfo && userInfo.username && ws.readyState === WebSocket.OPEN) { ws.send(messageString); } }); }
 function broadcastChannelList() { /* ... no change ... */ const message = { type: 'channel-list', payload: availableChannels }; console.log("[Server] Broadcasting updated channel list:", availableChannels); broadcast(message); }
-
-// Broadcast user list (all users + online status)
-async function broadcastUserListUpdate() {
-    try {
-        const allUsersCursor = usersCollection.find({}, { projection: { username: 1, _id: 0 } });
-        const allUserDocs = await allUsersCursor.toArray();
-        const allUsernames = allUserDocs.map(u => u.username);
-        const onlineUsernames = Array.from(onlineUsers.keys());
-
-        console.log("[Server] Broadcasting user list update. All:", allUsernames, "Online:", onlineUsernames);
-        broadcast({ type: 'user-list-update', payload: { all: allUsernames, online: onlineUsernames } });
-    } catch (error) {
-        console.error("[Server] Error fetching or broadcasting user list:", error);
-    }
+async function broadcastUserListUpdate() { /* ... no change ... */ try { const allUsersCursor = usersCollection.find({}, { projection: { username: 1, _id: 0 } }); const allUserDocs = await allUsersCursor.toArray(); const allUsernames = allUserDocs.map(u => u.username); const onlineUsernames = Array.from(onlineUsers.keys()); console.log("[Server] Broadcasting user list update. All:", allUsernames, "Online:", onlineUsernames); broadcast({ type: 'user-list-update', payload: { all: allUsernames, online: onlineUsernames } }); } catch (error) { console.error("[Server] Error fetching or broadcasting user list:", error); } }
+// Broadcast typing status
+function broadcastTypingUpdate() {
+    const currentlyTyping = Array.from(typingUsers.keys());
+    // console.log("[Server] Broadcasting typing update:", currentlyTyping); // Can be noisy
+    broadcast({ type: 'typing-update', payload: { typing: currentlyTyping } });
 }
 
 // --- Authentication Logic ---
-async function handleSignup(ws, data) { /* ... no change ... */ if (clients.get(ws)?.username) return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Already logged in' })); const { username, password } = data; if (!username || !password) return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Username and password required' })); try { const existingUser = await usersCollection.findOne({ username: username.toLowerCase() }); if (existingUser) return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Username already taken' })); const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS); await usersCollection.insertOne({ username: username.toLowerCase(), password: hashedPassword, admin: false, profilePicture: null, aboutMe: "", createdAt: new Date() }); console.log(`[Server] User created: ${username}`); ws.send(JSON.stringify({ type: 'signup-response', success: true })); /* Note: We don't broadcast user list here, only after they log in */ } catch (error) { console.error("[Server] Signup error:", error); ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Server error during signup' })); } }
-
-async function handleLogin(ws, data) {
-    if (clients.get(ws)?.username) return ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Already logged in' }));
-    const { username, password } = data;
-    if (!username || !password) return ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Username and password required' }));
-    try {
-        const user = await usersCollection.findOne({ username: username.toLowerCase() });
-        if (!user) return ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Invalid username or password' }));
-        const match = await bcrypt.compare(password, user.password);
-        if (!match) return ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Invalid username or password' }));
-
-        // Login successful
-        const currentChannel = DEFAULT_CHANNEL;
-        const userInfo = { username: user.username, currentChannel: currentChannel, isAdmin: user.admin || false };
-        clients.set(ws, userInfo);
-        onlineUsers.set(user.username, { ws: ws, currentChannel: currentChannel, isAdmin: userInfo.isAdmin });
-        console.log(`[Server] User logged in: ${user.username} (Admin: ${userInfo.isAdmin}), joined channel: ${currentChannel}`);
-
-        const initialHistory = await loadHistoryFromDB(currentChannel);
-        ws.send(JSON.stringify({ type: 'login-response', success: true, username: user.username, isAdmin: userInfo.isAdmin }));
-        ws.send(JSON.stringify({ type: 'channel-list', payload: availableChannels }));
-        ws.send(JSON.stringify({ type: 'history', channel: currentChannel, payload: initialHistory }));
-        broadcastUserListUpdate(); // Send full user list update
-
-    } catch (error) { console.error("[Server] Login error:", error); ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Server error during login' })); }
-}
+async function handleSignup(ws, data) { /* ... no change ... */ if (clients.get(ws)?.username) return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Already logged in' })); const { username, password } = data; if (!username || !password) return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Username and password required' })); try { const existingUser = await usersCollection.findOne({ username: username.toLowerCase() }); if (existingUser) return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Username already taken' })); const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS); await usersCollection.insertOne({ username: username.toLowerCase(), password: hashedPassword, admin: false, profilePicture: null, aboutMe: "", createdAt: new Date() }); console.log(`[Server] User created: ${username}`); ws.send(JSON.stringify({ type: 'signup-response', success: true })); } catch (error) { console.error("[Server] Signup error:", error); ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Server error during signup' })); } }
+async function handleLogin(ws, data) { /* ... no change ... */ if (clients.get(ws)?.username) return ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Already logged in' })); const { username, password } = data; if (!username || !password) return ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Username and password required' })); try { const user = await usersCollection.findOne({ username: username.toLowerCase() }); if (!user) return ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Invalid username or password' })); const match = await bcrypt.compare(password, user.password); if (!match) return ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Invalid username or password' })); const currentChannel = DEFAULT_CHANNEL; const userInfo = { username: user.username, currentChannel: currentChannel, isAdmin: user.admin || false }; clients.set(ws, userInfo); onlineUsers.set(user.username, { ws: ws, currentChannel: currentChannel, isAdmin: userInfo.isAdmin }); console.log(`[Server] User logged in: ${user.username} (Admin: ${userInfo.isAdmin}), joined channel: ${currentChannel}`); const initialHistory = await loadHistoryFromDB(currentChannel); ws.send(JSON.stringify({ type: 'login-response', success: true, username: user.username, isAdmin: userInfo.isAdmin })); ws.send(JSON.stringify({ type: 'channel-list', payload: availableChannels })); ws.send(JSON.stringify({ type: 'history', channel: currentChannel, payload: initialHistory })); broadcastUserListUpdate(); } catch (error) { console.error("[Server] Login error:", error); ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Server error during login' })); } }
 
 // --- Message & Action Handling ---
 async function handleChatMessage(ws, data) { /* ... no change ... */ const userInfo = clients.get(ws); if (!userInfo || !userInfo.username) return; const targetChannel = userInfo.currentChannel; if (data.text && targetChannel) { const messageData = { type: 'chat', channel: targetChannel, text: data.text, sender: userInfo.username, timestamp: Date.now(), edited: false }; await saveMessageToDB(messageData); broadcast(messageData); } else { console.warn('[Server] Received invalid chat message format or missing channel:', data); } }
@@ -95,8 +65,48 @@ async function handleDeleteChannel(ws, data) { /* ... no change ... */ const use
 async function handleGetUserProfile(ws, data) { /* ... no change ... */ const userInfo = clients.get(ws); if (!userInfo || !userInfo.username) return; const targetUsername = data.username; if (!targetUsername) return; try { const profile = await usersCollection.findOne( { username: targetUsername.toLowerCase() }, { projection: { username: 1, aboutMe: 1, profilePicture: 1, _id: 0 } } ); if (profile) { ws.send(JSON.stringify({ type: 'user-profile-response', success: true, profile: profile })); } else { ws.send(JSON.stringify({ type: 'user-profile-response', success: false, error: 'User not found' })); } } catch (error) { console.error(`[Server] Error fetching profile for ${targetUsername}:`, error); ws.send(JSON.stringify({ type: 'user-profile-response', success: false, error: 'Server error fetching profile' })); } }
 async function handleEditMessage(ws, data) { /* ... no change ... */ const userInfo = clients.get(ws); if (!userInfo || !userInfo.username) return; const { messageId, newText } = data; if (!messageId || !newText?.trim()) { return ws.send(JSON.stringify({ type: 'error', message: 'Invalid edit request' })); } try { const messageObjectId = new ObjectId(messageId); const message = await messagesCollection.findOne({ _id: messageObjectId }); if (!message) { return ws.send(JSON.stringify({ type: 'error', message: 'Message not found' })); } if (message.sender !== userInfo.username) { return ws.send(JSON.stringify({ type: 'error', message: 'You can only edit your own messages' })); } const updateResult = await messagesCollection.updateOne( { _id: messageObjectId }, { $set: { text: newText.trim(), edited: true, editedTimestamp: Date.now() } } ); if (updateResult.modifiedCount === 1) { console.log(`[Server] User ${userInfo.username} edited message ${messageId}`); broadcast({ type: 'message-edited', payload: { _id: messageId, channel: message.channel, text: newText.trim(), edited: true } }); } else { ws.send(JSON.stringify({ type: 'error', message: 'Failed to edit message' })); } } catch (error) { console.error(`[Server] Error editing message ${messageId}:`, error); ws.send(JSON.stringify({ type: 'error', message: 'Server error editing message' })); } }
 async function handleDeleteMessage(ws, data) { /* ... no change ... */ const userInfo = clients.get(ws); if (!userInfo || !userInfo.username) return; const { messageId } = data; if (!messageId) { return ws.send(JSON.stringify({ type: 'error', message: 'Invalid delete request' })); } try { const messageObjectId = new ObjectId(messageId); const message = await messagesCollection.findOne({ _id: messageObjectId }); if (!message) { return; } if (message.sender !== userInfo.username) { return ws.send(JSON.stringify({ type: 'error', message: 'You can only delete your own messages' })); } const deleteResult = await messagesCollection.deleteOne({ _id: messageObjectId }); if (deleteResult.deletedCount === 1) { console.log(`[Server] User ${userInfo.username} deleted message ${messageId}`); broadcast({ type: 'message-deleted', payload: { _id: messageId, channel: message.channel } }); } else { ws.send(JSON.stringify({ type: 'error', message: 'Failed to delete message' })); } } catch (error) { console.error(`[Server] Error deleting message ${messageId}:`, error); ws.send(JSON.stringify({ type: 'error', message: 'Server error deleting message' })); } }
-// REMOVED handleGetAllUsers - Now handled by broadcastUserListUpdate
 
+// --- New Handlers for Party Mode & Typing ---
+function handleTogglePartyMode(ws, data) {
+    const userInfo = clients.get(ws);
+    if (!userInfo || !userInfo.isAdmin) {
+        return ws.send(JSON.stringify({ type: 'error', message: 'Permission denied: Admin required' }));
+    }
+    partyModeActive = !partyModeActive; // Toggle state
+    console.log(`[Server] Party mode toggled ${partyModeActive ? 'ON' : 'OFF'} by ${userInfo.username}`);
+    broadcast({ type: 'party-mode-toggle', payload: { active: partyModeActive } }); // Notify all clients
+}
+
+function handleStartTyping(ws, data) {
+    const userInfo = clients.get(ws);
+    if (!userInfo || !userInfo.username) return;
+
+    const username = userInfo.username;
+    // Clear existing timeout if user types again quickly
+    if (typingUsers.has(username)) {
+        clearTimeout(typingUsers.get(username));
+    }
+    // Set new timeout
+    const timeoutId = setTimeout(() => {
+        typingUsers.delete(username);
+        broadcastTypingUpdate(); // Broadcast update when timeout expires
+    }, TYPING_TIMEOUT_MS);
+    typingUsers.set(username, timeoutId);
+
+    broadcastTypingUpdate(); // Broadcast immediately that user started typing
+}
+
+function handleStopTyping(ws, data) {
+     const userInfo = clients.get(ws);
+    if (!userInfo || !userInfo.username) return;
+
+    const username = userInfo.username;
+    if (typingUsers.has(username)) {
+        clearTimeout(typingUsers.get(username)); // Clear timeout
+        typingUsers.delete(username); // Remove user
+        broadcastTypingUpdate(); // Broadcast update
+    }
+}
 
 // --- Server Setup ---
 async function startServer() {
@@ -123,7 +133,9 @@ async function startServer() {
                     case 'get-user-profile': await handleGetUserProfile(ws, parsedMessage); break;
                     case 'edit-message': await handleEditMessage(ws, parsedMessage); break;
                     case 'delete-message': await handleDeleteMessage(ws, parsedMessage); break;
-                    // Removed 'get-all-users' case
+                    case 'toggle-party-mode': handleTogglePartyMode(ws, parsedMessage); break; // New
+                    case 'start-typing': handleStartTyping(ws, parsedMessage); break; // New
+                    case 'stop-typing': handleStopTyping(ws, parsedMessage); break; // New
                     default: console.warn(`[Server] Received unknown message type: ${parsedMessage.type}`);
                 }
             } catch (e) { console.error('[Server] Failed to parse message or process:', message.toString(), e); }
@@ -132,8 +144,14 @@ async function startServer() {
         ws.on('close', () => {
             const userInfo = clients.get(ws);
             if (userInfo && userInfo.username) {
+                // Clear typing status on disconnect
+                if (typingUsers.has(userInfo.username)) {
+                    clearTimeout(typingUsers.get(userInfo.username));
+                    typingUsers.delete(userInfo.username);
+                    broadcastTypingUpdate();
+                }
                 onlineUsers.delete(userInfo.username);
-                broadcastUserListUpdate(); // Send updated list on disconnect
+                broadcastUserListUpdate();
             }
             console.log(`[Server] Client disconnected: ${clientIdentifier}${userInfo?.username ? ` (${userInfo.username})` : ''}`);
             clients.delete(ws);
@@ -142,8 +160,14 @@ async function startServer() {
         ws.on('error', (error) => {
             const userInfo = clients.get(ws);
              if (userInfo && userInfo.username) {
+                 // Clear typing status on error
+                 if (typingUsers.has(userInfo.username)) {
+                    clearTimeout(typingUsers.get(userInfo.username));
+                    typingUsers.delete(userInfo.username);
+                    broadcastTypingUpdate();
+                 }
                 onlineUsers.delete(userInfo.username);
-                broadcastUserListUpdate(); // Send updated list on error/disconnect
+                broadcastUserListUpdate();
             }
             console.error(`[Server] WebSocket error for client ${clientIdentifier}${userInfo?.username ? ` (${userInfo.username})` : ''}:`, error);
             clients.delete(ws);
