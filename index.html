@@ -1,58 +1,173 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-    <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
-    <title>gcCHAT</title> <!-- Updated title -->
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
+    <title>gcCHAT</title>
+    <!-- Updated title -->
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
     <!-- Login/Signup View -->
     <div id="auth-view">
-        <div class="auth-container">
-            <h2 id="auth-title">Login</h2>
-            <div id="auth-error" class="error-message"></div>
-            <div class="input-group"> <label for="username">Username:</label> <input type="text" id="username" name="username" required> </div>
-            <div class="input-group"> <label for="password">Password:</label> <input type="password" id="password" name="password" required> </div>
-            <button id="login-button" class="auth-button">Login</button>
-            <button id="signup-button" class="auth-button">Sign Up</button>
-            <p id="toggle-auth-message">Don't have an account? <a href="#" id="toggle-signup">Sign up here</a>.</p>
+      <div class="auth-container">
+        <h2 id="auth-title">Login</h2>
+        <div id="auth-error" class="error-message"></div>
+        <div class="input-group">
+          <label for="username">Username:</label>
+          <input type="text" id="username" name="username" required />
         </div>
+        <div class="input-group">
+          <label for="password">Password:</label>
+          <input type="password" id="password" name="password" required />
+        </div>
+        <button id="login-button" class="auth-button">Login</button>
+        <button id="signup-button" class="auth-button">Sign Up</button>
+        <p id="toggle-auth-message">
+          Don't have an account?
+          <a href="#" id="toggle-signup">Sign up here</a>.
+        </p>
+      </div>
     </div>
 
     <!-- Chat View -->
-    <div id="chat-view" style="display: none;">
-        <!-- Channel Sidebar -->
-        <div id="sidebar">
-            <div id="server-header">gcCHAT</div>
-            <div id="channel-list"></div>
-            <div id="user-area">
-                <span id="user-info"></span>
-                <button id="party-mode-button" title="Toggle Party Mode" style="display: none;">🎉</button> <!-- Admin Only Button -->
-            </div>
+    <div id="chat-view" style="display: none">
+      <!-- Channel Sidebar -->
+      <div id="sidebar">
+        <div id="server-header">gcCHAT</div>
+        <div id="channel-list"></div>
+        <div id="user-area">
+          <span id="user-info"></span>
+          <button
+            id="party-mode-button"
+            title="Toggle Party Mode"
+            style="display: none"
+          >
+            🎉
+          </button>
+          <!-- Admin Only Button -->
         </div>
-        <!-- Main Content -->
-        <div id="main-content">
-            <div id="status-bar"> Status: <span id="connection-status"></span> <span id="current-channel-name"></span> <span id="host-info"></span> </div>
-            <div id="messages"></div>
-            <!-- Typing Indicator -->
-            <div id="typing-indicator">
-                <!-- Content set by JS -->
-            </div>
-            <div id="input-area"> <input type="text" id="message-input" placeholder="Type your message..." disabled> <button id="send-button" disabled>Send</button> </div>
+      </div>
+      <!-- Main Content -->
+      <div id="main-content">
+        <div id="status-bar">
+          Status: <span id="connection-status"></span>
+          <span id="current-channel-name"></span> <span id="host-info"></span>
         </div>
-        <!-- User List Sidebar -->
-        <div id="user-list-sidebar">
-            <div id="user-list-online"> <h4>Online — <span id="online-count">0</span></h4> </div>
-            <div id="user-list-offline"> <h4>Offline — <span id="offline-count">0</span></h4> </div>
+        <div id="messages"></div>
+        <!-- Typing Indicator -->
+        <div id="typing-indicator">
+          <!-- Content set by JS -->
         </div>
+        <div id="input-area">
+          <input
+            type="text"
+            id="message-input"
+            placeholder="Type your message..."
+            disabled
+          />
+          <button id="send-button" disabled>Send</button>
+        </div>
+      </div>
+      <!-- User List Sidebar -->
+      <div id="user-list-sidebar">
+        <div id="user-list-online">
+          <h4>Online — <span id="online-count">0</span></h4>
+        </div>
+        <div id="user-list-offline">
+          <h4>Offline — <span id="offline-count">0</span></h4>
+        </div>
+      </div>
     </div>
 
     <!-- Modals -->
-    <div id="profile-modal-backdrop" class="modal-backdrop" style="display: none;"> <!-- ... profile modal ... --> <div id="profile-modal" class="modal"> <button id="close-profile-modal" class="close-button">&times;</button> <div class="profile-header"> <div id="profile-modal-avatar" class="profile-avatar-large"></div> <div id="profile-modal-username" class="profile-username-large"></div> </div> <div class="profile-body"> <h4>About Me</h4> <p id="profile-modal-aboutme">Loading...</p> </div> </div> </div>
-    <div id="create-channel-modal-backdrop" class="modal-backdrop" style="display: none;"> <!-- ... create channel modal ... --> <div id="create-channel-modal" class="modal"> <button id="close-create-channel-modal" class="close-button">&times;</button> <h3>Create Text Channel</h3> <div class="input-group"> <label for="new-channel-name">Channel Name</label> <input type="text" id="new-channel-name" name="new-channel-name" placeholder="new-channel"> </div> <div class="modal-actions"> <button id="cancel-create-channel-button" class="modal-button secondary">Cancel</button> <button id="submit-create-channel-button" class="modal-button primary">Create Channel</button> </div> </div> </div>
-    <div id="delete-channel-modal-backdrop" class="modal-backdrop" style="display: none;"> <!-- ... delete channel modal ... --> <div id="delete-channel-modal" class="modal"> <button id="close-delete-channel-modal" class="close-button">&times;</button> <h3>Delete Channel</h3> <p>Are you sure you want to delete <strong id="delete-channel-name-confirm">#channel</strong>? This cannot be undone.</p> <div class="modal-actions"> <button id="cancel-delete-channel-button" class="modal-button secondary">Cancel</button> <button id="submit-delete-channel-button" class="modal-button danger">Delete Channel</button> </div> </div> </div>
+    <div
+      id="profile-modal-backdrop"
+      class="modal-backdrop"
+      style="display: none"
+    >
+      <!-- ... profile modal ... -->
+      <div id="profile-modal" class="modal">
+        <button id="close-profile-modal" class="close-button">&times;</button>
+        <div class="profile-header">
+          <div id="profile-modal-avatar" class="profile-avatar-large"></div>
+          <div id="profile-modal-username" class="profile-username-large"></div>
+        </div>
+        <div class="profile-body">
+          <h4>About Me</h4>
+          <p id="profile-modal-aboutme">Loading...</p>
+        </div>
+      </div>
+    </div>
+    <div
+      id="create-channel-modal-backdrop"
+      class="modal-backdrop"
+      style="display: none"
+    >
+      <!-- ... create channel modal ... -->
+      <div id="create-channel-modal" class="modal">
+        <button id="close-create-channel-modal" class="close-button">
+          &times;
+        </button>
+        <h3>Create Text Channel</h3>
+        <div class="input-group">
+          <label for="new-channel-name">Channel Name</label>
+          <input
+            type="text"
+            id="new-channel-name"
+            name="new-channel-name"
+            placeholder="new-channel"
+          />
+        </div>
+        <div class="modal-actions">
+          <button
+            id="cancel-create-channel-button"
+            class="modal-button secondary"
+          >
+            Cancel
+          </button>
+          <button
+            id="submit-create-channel-button"
+            class="modal-button primary"
+          >
+            Create Channel
+          </button>
+        </div>
+      </div>
+    </div>
+    <div
+      id="delete-channel-modal-backdrop"
+      class="modal-backdrop"
+      style="display: none"
+    >
+      <!-- ... delete channel modal ... -->
+      <div id="delete-channel-modal" class="modal">
+        <button id="close-delete-channel-modal" class="close-button">
+          &times;
+        </button>
+        <h3>Delete Channel</h3>
+        <p>
+          Are you sure you want to delete
+          <strong id="delete-channel-name-confirm">#channel</strong>? This
+          cannot be undone.
+        </p>
+        <div class="modal-actions">
+          <button
+            id="cancel-delete-channel-button"
+            class="modal-button secondary"
+          >
+            Cancel
+          </button>
+          <button id="submit-delete-channel-button" class="modal-button danger">
+            Delete Channel
+          </button>
+        </div>
+      </div>
+    </div>
 
     <script src="renderer.js"></script>
-</body>
+  </body>
 </html>
