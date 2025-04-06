@@ -9,50 +9,46 @@
 <body>
     <!-- Login/Signup View -->
     <div id="auth-view">
+        <!-- ... Auth form ... -->
         <div class="auth-container">
             <h2 id="auth-title">Login</h2>
             <div id="auth-error" class="error-message"></div>
-            <div class="input-group">
-                <label for="username">Username:</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            <div class="input-group">
-                <label for="password">Password:</label>
-                <input type="password" id="password" name="password" required>
-            </div>
+            <div class="input-group"> <label for="username">Username:</label> <input type="text" id="username" name="username" required> </div>
+            <div class="input-group"> <label for="password">Password:</label> <input type="password" id="password" name="password" required> </div>
             <button id="login-button" class="auth-button">Login</button>
             <button id="signup-button" class="auth-button">Sign Up</button>
             <p id="toggle-auth-message">Don't have an account? <a href="#" id="toggle-signup">Sign up here</a>.</p>
         </div>
     </div>
 
-    <!-- Chat View (Initially Hidden) -->
-    <div id="chat-view" style="display: none;"> <!-- Removed inline styles, handled by CSS -->
-        <!-- Sidebar for Channels -->
+    <!-- Chat View -->
+    <div id="chat-view" style="display: none;">
+        <!-- Sidebar -->
         <div id="sidebar">
-            <div id="server-header">GC Chat</div> <!-- Simple header -->
-            <div id="channel-list">
-                <!-- Channel links will be added here by JS -->
-            </div>
-            <div id="user-area">
-                 <span id="user-info"></span> <!-- Moved user info here -->
-                 <!-- Add logout button later? -->
-            </div>
+            <div id="server-header">GC Chat</div>
+            <div id="channel-list"></div>
+            <div id="user-area"> <span id="user-info"></span> </div>
         </div>
-
-        <!-- Main Chat Area -->
+        <!-- Main Content -->
         <div id="main-content">
-            <div id="status-bar">
-                Status: <span id="connection-status">Initializing...</span>
-                <span id="current-channel-name"></span> <!-- Display current channel -->
-                <span id="host-info"></span> <!-- Server URL -->
+            <div id="status-bar"> Status: <span id="connection-status"></span> <span id="current-channel-name"></span> <span id="host-info"></span> </div>
+            <div id="messages"></div>
+            <div id="input-area"> <input type="text" id="message-input" placeholder="Type your message..." disabled> <button id="send-button" disabled>Send</button> </div>
+        </div>
+    </div>
+
+    <!-- User Profile Modal (Initially Hidden) -->
+    <div id="profile-modal-backdrop" class="modal-backdrop" style="display: none;">
+        <div id="profile-modal" class="modal">
+            <button id="close-profile-modal" class="close-button">&times;</button>
+            <div class="profile-header">
+                <div id="profile-modal-avatar" class="profile-avatar-large"></div>
+                <div id="profile-modal-username" class="profile-username-large"></div>
             </div>
-            <div id="messages">
-                <!-- Chat messages will appear here -->
-            </div>
-            <div id="input-area">
-                <input type="text" id="message-input" placeholder="Type your message..." disabled>
-                <button id="send-button" disabled>Send</button>
+            <div class="profile-body">
+                <h4>About Me</h4>
+                <p id="profile-modal-aboutme">Loading...</p>
+                <!-- Add more profile fields here later -->
             </div>
         </div>
     </div>
