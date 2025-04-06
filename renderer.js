@@ -38,7 +38,6 @@ const closeDeleteChannelModalButton = document.getElementById('close-delete-chan
 const deleteChannelNameConfirm = document.getElementById('delete-channel-name-confirm');
 const cancelDeleteChannelButton = document.getElementById('cancel-delete-channel-button');
 const submitDeleteChannelButton = document.getElementById('submit-delete-channel-button');
-// User List Elements
 const userListOnlineDiv = document.getElementById('user-list-online');
 const userListOfflineDiv = document.getElementById('user-list-offline');
 const onlineCountSpan = document.getElementById('online-count');
@@ -53,12 +52,12 @@ let currentChannel = 'general';
 let availableChannels = ['general'];
 let lastMessageSender = null;
 let channelToDelete = null;
-let allUsers = []; // Store all known usernames
-let onlineUsers = []; // Store online usernames
+let allUsers = []; // Store all known usernames from last update
+let onlineUsers = []; // Store online usernames from last update
 
 // --- UI Switching ---
 function showAuthView(showLogin = true) { /* ... no change ... */ isLoginMode = showLogin; authTitle.textContent = isLoginMode ? 'Login' : 'Sign Up'; loginButton.style.display = isLoginMode ? 'block' : 'none'; signupButton.style.display = isLoginMode ? 'none' : 'block'; toggleAuthMessage.innerHTML = isLoginMode ? `Don't have an account? <a href="#" id="toggle-signup">Sign up here</a>.` : `Already have an account? <a href="#" id="toggle-login">Login here</a>.`; attachToggleListeners(); authView.style.display = 'block'; chatView.style.display = 'none'; document.body.style.justifyContent = 'center'; document.body.style.alignItems = 'center'; hideAuthError(); }
-function showChatView() { /* ... no change ... */ authView.style.display = 'none'; chatView.style.display = 'flex'; document.body.style.justifyContent = 'flex-start'; document.body.style.alignItems = 'stretch'; messageInput.disabled = false; sendButton.disabled = false; messageInput.focus(); updateChannelHighlight(); window.electronAPI.getAllUsers(); /* Request user list on showing chat */ }
+function showChatView() { /* ... no change ... */ authView.style.display = 'none'; chatView.style.display = 'flex'; document.body.style.justifyContent = 'flex-start'; document.body.style.alignItems = 'stretch'; messageInput.disabled = false; sendButton.disabled = false; messageInput.focus(); updateChannelHighlight(); /* User list requested by server on login/update */ }
 function showAuthError(message) { /* ... no change ... */ authErrorDiv.textContent = message; authErrorDiv.style.display = 'block'; }
 function hideAuthError() { /* ... no change ... */ authErrorDiv.textContent = ''; authErrorDiv.style.display = 'none'; }
 
@@ -89,19 +88,20 @@ sidebar.addEventListener('contextmenu', (e) => { /* ... no change ... */ if (e.t
 
 // --- User List UI ---
 function renderUserList() {
-    userListOnlineDiv.innerHTML = `<h4>Online — <span id="online-count">${onlineUsers.length}</span></h4>`; // Clear previous online users
-    userListOfflineDiv.innerHTML = `<h4>Offline — <span id="offline-count">${allUsers.length - onlineUsers.length}</span></h4>`; // Clear previous offline users
+    // Use the globally stored allUsers and onlineUsers lists
+    const onlineCount = onlineUsers.length;
+    const offlineCount = allUsers.length - onlineCount;
 
-    // Sort all users alphabetically first
+    userListOnlineDiv.innerHTML = `<h4>Online — <span id="online-count">${onlineCount}</span></h4>`;
+    userListOfflineDiv.innerHTML = `<h4>Offline — <span id="offline-count">${offlineCount < 0 ? 0 : offlineCount}</span></h4>`; // Prevent negative count
+
     const sortedUsers = [...allUsers].sort((a, b) => a.localeCompare(b));
 
     sortedUsers.forEach(username => {
         const isOnline = onlineUsers.includes(username);
         const userItem = document.createElement('div');
         userItem.classList.add('user-list-item');
-        if (!isOnline) {
-            userItem.classList.add('offline');
-        }
+        userItem.classList.toggle('offline', !isOnline); // Add/remove offline class
 
         const avatarDiv = document.createElement('div');
         avatarDiv.classList.add('user-avatar');
@@ -114,11 +114,7 @@ function renderUserList() {
 
         userItem.appendChild(avatarDiv);
         userItem.appendChild(nameSpan);
-
-        // Add click listener to show profile
-        userItem.addEventListener('click', () => {
-            window.electronAPI.getUserProfile(username);
-        });
+        userItem.addEventListener('click', () => window.electronAPI.getUserProfile(username));
 
         if (isOnline) {
             userListOnlineDiv.appendChild(userItem);
@@ -130,187 +126,11 @@ function renderUserList() {
 
 
 // --- Message Handling ---
-function addMessage(messageData) {
-    if (messageData.channel !== currentChannel) return;
-
-    const sender = messageData.sender || 'Unknown';
-    const isConsecutive = sender === lastMessageSender;
-    const messageId = messageData._id; // Get MongoDB ObjectId string
-
-    let messageGroup;
-    let contentDiv;
-
-    if (isConsecutive && messagesDiv.lastElementChild?.classList.contains('message-group')) {
-        messageGroup = messagesDiv.lastElementChild;
-        contentDiv = messageGroup.querySelector('.message-group-content');
-        messageGroup.style.marginTop = '2px';
-    } else {
-        messageGroup = document.createElement('div');
-        messageGroup.classList.add('message-group');
-        messageGroup.dataset.sender = sender; // Store sender for potential future use
-
-        const firstLetter = sender.charAt(0)?.toUpperCase() || '?';
-        const avatarDiv = document.createElement('div');
-        avatarDiv.classList.add('message-avatar');
-        avatarDiv.textContent = firstLetter;
-        avatarDiv.style.backgroundColor = getAvatarColor(sender);
-        avatarDiv.dataset.username = sender;
-        avatarDiv.addEventListener('click', () => window.electronAPI.getUserProfile(sender));
-        messageGroup.appendChild(avatarDiv);
-
-        contentDiv = document.createElement('div');
-        contentDiv.classList.add('message-group-content');
-
-        const headerDiv = document.createElement('div');
-        headerDiv.classList.add('message-header');
-        const senderSpan = document.createElement('span');
-        senderSpan.classList.add('sender');
-        senderSpan.textContent = sender;
-        senderSpan.dataset.username = sender;
-        senderSpan.addEventListener('click', () => window.electronAPI.getUserProfile(sender));
-        const timestampSpan = document.createElement('span');
-        timestampSpan.classList.add('timestamp');
-        timestampSpan.textContent = messageData.timestamp ? new Date(messageData.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
-        headerDiv.appendChild(senderSpan);
-        headerDiv.appendChild(timestampSpan);
-        contentDiv.appendChild(headerDiv);
-
-        messageGroup.appendChild(contentDiv);
-        messagesDiv.appendChild(messageGroup);
-    }
-
-    const textDiv = document.createElement('div');
-    textDiv.classList.add('message-text');
-    textDiv.dataset.messageId = messageId; // Store message ID
-    textDiv.textContent = messageData.text;
-
-    // Add edited marker if applicable
-    if (messageData.edited) {
-        const editedSpan = document.createElement('span');
-        editedSpan.classList.add('timestamp'); // Reuse timestamp style
-        editedSpan.style.marginLeft = '5px';
-        editedSpan.style.fontStyle = 'italic';
-        editedSpan.textContent = '(edited)';
-        // Append after timestamp in header if it's the first message, otherwise append to textDiv?
-        // Let's append to textDiv for simplicity
-         textDiv.appendChild(editedSpan);
-    }
-
-
-    // Add context menu listener to the text div
-    textDiv.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        const isOwn = sender === localUsername;
-        window.electronAPI.showMessageContextMenu(messageId, isOwn);
-    });
-
-    contentDiv.appendChild(textDiv);
-    lastMessageSender = sender;
-
-    const isScrolledToBottom = messagesDiv.scrollHeight - messagesDiv.clientHeight <= messagesDiv.scrollTop + 5;
-    if (isScrolledToBottom) {
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    }
-}
-
-function clearMessages() { messagesDiv.innerHTML = ''; lastMessageSender = null; }
-
-// --- Message Edit/Delete Handling ---
-function handleEditMessage(messageId) {
-    const messageTextDiv = messagesDiv.querySelector(`.message-text[data-message-id="${messageId}"]`);
-    if (!messageTextDiv) return;
-
-    const currentText = messageTextDiv.childNodes[0].textContent; // Get original text, ignoring (edited) span if present
-
-    // Replace text div with an input field
-    const editInput = document.createElement('input');
-    editInput.type = 'text';
-    editInput.value = currentText;
-    editInput.classList.add('edit-message-input'); // Add class for styling if needed
-    editInput.style.width = '90%'; // Basic styling
-    editInput.style.backgroundColor = '#40444b';
-    editInput.style.color = '#dcddde';
-    editInput.style.border = '1px solid #7289da';
-    editInput.style.borderRadius = '4px';
-    editInput.style.padding = '5px';
-
-    const saveEdit = () => {
-        const newText = editInput.value.trim();
-        if (newText && newText !== currentText) {
-            window.electronAPI.editMessage(messageId, newText);
-        }
-        // Restore original text div (will be updated by server broadcast)
-        messageTextDiv.textContent = currentText; // Put original back temporarily
-        messageTextDiv.style.display = ''; // Show original text div
-        editInput.replaceWith(messageTextDiv); // Replace input with original div
-    };
-
-    const cancelEdit = () => {
-         messageTextDiv.textContent = currentText; // Restore original text
-         messageTextDiv.style.display = '';
-         editInput.replaceWith(messageTextDiv);
-    };
-
-    editInput.addEventListener('blur', cancelEdit); // Cancel on blur
-    editInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            editInput.removeEventListener('blur', cancelEdit); // Prevent cancel on blur after Enter
-            saveEdit();
-        } else if (e.key === 'Escape') {
-            e.preventDefault();
-            editInput.removeEventListener('blur', cancelEdit); // Prevent cancel on blur after Esc
-            cancelEdit();
-        }
-    });
-
-    messageTextDiv.style.display = 'none'; // Hide original text div
-    messageTextDiv.parentNode.insertBefore(editInput, messageTextDiv.nextSibling); // Insert input after text
-    editInput.focus();
-    editInput.select();
-}
-
-function updateEditedMessage(payload) {
-    const messageTextDiv = messagesDiv.querySelector(`.message-text[data-message-id="${payload._id}"]`);
-    if (messageTextDiv && payload.channel === currentChannel) {
-        messageTextDiv.textContent = payload.text; // Update text
-        // Add (edited) marker if not already there
-        if (payload.edited && !messageTextDiv.querySelector('.timestamp')) { // Check if marker exists
-             const editedSpan = document.createElement('span');
-             editedSpan.classList.add('timestamp');
-             editedSpan.style.marginLeft = '5px';
-             editedSpan.style.fontStyle = 'italic';
-             editedSpan.textContent = '(edited)';
-             messageTextDiv.appendChild(editedSpan);
-        }
-    }
-}
-
-function deleteMessageUI(payload) {
-    const messageTextDiv = messagesDiv.querySelector(`.message-text[data-message-id="${payload._id}"]`);
-    if (messageTextDiv && payload.channel === currentChannel) {
-        const groupContent = messageTextDiv.closest('.message-group-content');
-        const messageGroup = messageTextDiv.closest('.message-group');
-
-        // Remove just the text div
-        messageTextDiv.remove();
-
-        // If the content div is now empty (no header or other text), remove the whole group
-        if (groupContent && groupContent.childElementCount === 0) {
-            messageGroup?.remove();
-            // Reset last sender if the deleted message was the last one shown
-            if (messagesDiv.lastElementChild !== messageGroup) {
-                 lastMessageSender = messagesDiv.lastElementChild?.dataset.sender || null;
-            } else {
-                 lastMessageSender = null;
-            }
-
-        }
-         // TODO: Handle case where header should be removed if it was the only message in group
-         // This requires more complex logic to check siblings or message counts per group
-    }
-}
-
+function addMessage(messageData) { /* ... no change ... */ if (messageData.channel !== currentChannel) return; const sender = messageData.sender || 'Unknown'; const isConsecutive = sender === lastMessageSender; const messageId = messageData._id; let messageGroup; let contentDiv; if (isConsecutive && messagesDiv.lastElementChild?.classList.contains('message-group')) { messageGroup = messagesDiv.lastElementChild; contentDiv = messageGroup.querySelector('.message-group-content'); messageGroup.style.marginTop = '2px'; } else { messageGroup = document.createElement('div'); messageGroup.classList.add('message-group'); messageGroup.dataset.sender = sender; const firstLetter = sender.charAt(0)?.toUpperCase() || '?'; const avatarDiv = document.createElement('div'); avatarDiv.classList.add('message-avatar'); avatarDiv.textContent = firstLetter; avatarDiv.style.backgroundColor = getAvatarColor(sender); avatarDiv.dataset.username = sender; avatarDiv.addEventListener('click', () => window.electronAPI.getUserProfile(sender)); messageGroup.appendChild(avatarDiv); contentDiv = document.createElement('div'); contentDiv.classList.add('message-group-content'); const headerDiv = document.createElement('div'); headerDiv.classList.add('message-header'); const senderSpan = document.createElement('span'); senderSpan.classList.add('sender'); senderSpan.textContent = sender; senderSpan.dataset.username = sender; senderSpan.addEventListener('click', () => { window.electronAPI.getUserProfile(sender); }); const timestampSpan = document.createElement('span'); timestampSpan.classList.add('timestamp'); timestampSpan.textContent = messageData.timestamp ? new Date(messageData.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''; headerDiv.appendChild(senderSpan); headerDiv.appendChild(timestampSpan); contentDiv.appendChild(headerDiv); messageGroup.appendChild(contentDiv); messagesDiv.appendChild(messageGroup); } const textDiv = document.createElement('div'); textDiv.classList.add('message-text'); textDiv.dataset.messageId = messageId; textDiv.textContent = messageData.text; if (messageData.edited) { const editedSpan = document.createElement('span'); editedSpan.classList.add('timestamp'); editedSpan.style.marginLeft = '5px'; editedSpan.style.fontStyle = 'italic'; editedSpan.textContent = '(edited)'; textDiv.appendChild(editedSpan); } textDiv.addEventListener('contextmenu', (e) => { e.preventDefault(); const isOwn = sender === localUsername; window.electronAPI.showMessageContextMenu(messageId, isOwn); }); contentDiv.appendChild(textDiv); lastMessageSender = sender; const isScrolledToBottom = messagesDiv.scrollHeight - messagesDiv.clientHeight <= messagesDiv.scrollTop + 5; if (isScrolledToBottom) { messagesDiv.scrollTop = messagesDiv.scrollHeight; } }
+function clearMessages() { /* ... no change ... */ messagesDiv.innerHTML = ''; lastMessageSender = null; }
+function handleEditMessage(messageId) { /* ... no change ... */ const messageTextDiv = messagesDiv.querySelector(`.message-text[data-message-id="${messageId}"]`); if (!messageTextDiv) return; const currentText = messageTextDiv.childNodes[0].textContent; const editInput = document.createElement('input'); editInput.type = 'text'; editInput.value = currentText; editInput.classList.add('edit-message-input'); editInput.style.width = '90%'; editInput.style.backgroundColor = '#40444b'; editInput.style.color = '#dcddde'; editInput.style.border = '1px solid #7289da'; editInput.style.borderRadius = '4px'; editInput.style.padding = '5px'; const saveEdit = () => { const newText = editInput.value.trim(); if (newText && newText !== currentText) { window.electronAPI.editMessage(messageId, newText); } messageTextDiv.textContent = currentText; messageTextDiv.style.display = ''; editInput.replaceWith(messageTextDiv); }; const cancelEdit = () => { messageTextDiv.textContent = currentText; messageTextDiv.style.display = ''; editInput.replaceWith(messageTextDiv); }; editInput.addEventListener('blur', cancelEdit); editInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); editInput.removeEventListener('blur', cancelEdit); saveEdit(); } else if (e.key === 'Escape') { e.preventDefault(); editInput.removeEventListener('blur', cancelEdit); cancelEdit(); } }); messageTextDiv.style.display = 'none'; messageTextDiv.parentNode.insertBefore(editInput, messageTextDiv.nextSibling); editInput.focus(); editInput.select(); }
+function updateEditedMessage(payload) { /* ... no change ... */ const messageTextDiv = messagesDiv.querySelector(`.message-text[data-message-id="${payload._id}"]`); if (messageTextDiv && payload.channel === currentChannel) { messageTextDiv.textContent = payload.text; if (payload.edited && !messageTextDiv.querySelector('.timestamp')) { const editedSpan = document.createElement('span'); editedSpan.classList.add('timestamp'); editedSpan.style.marginLeft = '5px'; editedSpan.style.fontStyle = 'italic'; editedSpan.textContent = '(edited)'; messageTextDiv.appendChild(editedSpan); } } }
+function deleteMessageUI(payload) { /* ... no change ... */ const messageTextDiv = messagesDiv.querySelector(`.message-text[data-message-id="${payload._id}"]`); if (messageTextDiv && payload.channel === currentChannel) { const groupContent = messageTextDiv.closest('.message-group-content'); const messageGroup = messageTextDiv.closest('.message-group'); messageTextDiv.remove(); if (groupContent && groupContent.childElementCount === 0) { messageGroup?.remove(); if (messagesDiv.lastElementChild !== messageGroup) { lastMessageSender = messagesDiv.lastElementChild?.dataset.sender || null; } else { lastMessageSender = null; } } } }
 
 // --- Status Update ---
 function updateStatus(status) { /* ... no change ... */ console.log("Status Update:", status); let statusText = ''; let serverInfoText = ''; let userInfoText = ''; if (status.username) localUsername = status.username; if (status.isAdmin) isAdmin = status.isAdmin; if (status.currentChannel) currentChannel = status.currentChannel; if (status.connected) { statusText = 'Online'; serverInfoText = ''; userInfoText = `${localUsername}`; } else if (status.wsConnected) { statusText = 'Authenticating...'; serverInfoText = ''; userInfoText = ''; if (authView.style.display === 'none') showAuthView(isLoginMode); } else if (status.connecting) { statusText = `Connecting...`; serverInfoText = ''; userInfoText = ''; if (authView.style.display === 'none') showAuthView(isLoginMode); } else if (status.error) { statusText = `Error: ${status.error}`; serverInfoText = ''; userInfoText = ''; if (authView.style.display === 'none') showAuthView(isLoginMode); } else { statusText = 'Disconnected'; serverInfoText = ''; userInfoText = ''; if (authView.style.display === 'none') showAuthView(isLoginMode); } connectionStatusSpan.textContent = statusText; hostInfoSpan.textContent = serverInfoText; userInfoSpan.textContent = userInfoText; currentChannelSpan.textContent = currentChannel || '...'; const isLoggedIn = !!localUsername; messageInput.disabled = !isLoggedIn; sendButton.disabled = !isLoggedIn; if (isLoggedIn) updateChannelHighlight(); if (isLoggedIn) renderChannelList(); }
@@ -328,7 +148,7 @@ passwordInput.addEventListener('keypress', (e) => { /* ... no change ... */ if (
 
 // --- IPC Listeners ---
 window.electronAPI.onSignupResponse(response => { /* ... no change ... */ console.log('Signup Response:', response); if (response.success) { showAuthView(true); alert('Signup successful! Please log in.'); } else { showAuthError(response.error || 'Signup failed.'); } });
-window.electronAPI.onLoginResponse(response => { /* ... no change ... */ console.log('Login Response:', response); if (response.success) { localUsername = response.username; isAdmin = response.isAdmin || false; currentChannel = 'general'; hideAuthError(); showChatView(); userInfoSpan.textContent = `${localUsername}`; connectionStatusSpan.textContent = 'Online'; window.electronAPI.getAllUsers(); /* Request user list on login */ } else { showAuthError(response.error || 'Login failed.'); } });
+window.electronAPI.onLoginResponse(response => { /* ... no change ... */ console.log('Login Response:', response); if (response.success) { localUsername = response.username; isAdmin = response.isAdmin || false; currentChannel = 'general'; hideAuthError(); showChatView(); userInfoSpan.textContent = `${localUsername}`; connectionStatusSpan.textContent = 'Online'; /* User list requested by server */ } else { showAuthError(response.error || 'Login failed.'); } });
 window.electronAPI.onChannelList(response => { /* ... no change ... */ console.log('Channel List:', response.payload); availableChannels = response.payload || ['general']; renderChannelList(); });
 window.electronAPI.onMessageReceived((messageData) => { addMessage(messageData); });
 window.electronAPI.onLoadHistory((data) => { /* ... no change ... */ console.log(`Loading history for channel: ${data.channel}`); currentChannel = data.channel; updateChannelHighlight(); clearMessages(); data.payload.forEach(msg => addMessage(msg)); messagesDiv.scrollTop = messagesDiv.scrollHeight; });
@@ -338,29 +158,16 @@ window.electronAPI.onUserProfileResponse(response => { /* ... no change ... */ i
 window.electronAPI.onError(errorData => { /* ... no change ... */ alert(`Server Error: ${errorData.message}`); });
 window.electronAPI.onPromptCreateChannel(() => { /* ... no change ... */ showCreateChannelModal(); });
 window.electronAPI.onConfirmDeleteChannel((channelName) => { /* ... no change ... */ showDeleteChannelModal(channelName); });
+window.electronAPI.onMessageEdited((payload) => { updateEditedMessage(payload); });
+window.electronAPI.onMessageDeleted((payload) => { deleteMessageUI(payload); });
+window.electronAPI.onEditMessagePrompt((messageId) => { handleEditMessage(messageId); });
 
-// New listeners for edit/delete/presence
-window.electronAPI.onMessageEdited((payload) => {
-    console.log("Received message edit:", payload);
-    updateEditedMessage(payload);
-});
-window.electronAPI.onMessageDeleted((payload) => {
-     console.log("Received message delete:", payload);
-     deleteMessageUI(payload);
-});
-window.electronAPI.onAllUsersList((payload) => {
-    console.log("Received all users list:", payload);
+// Listen for user list updates
+window.electronAPI.onUserListUpdate((payload) => {
+    console.log("Received user list update:", payload);
     allUsers = payload.all || [];
     onlineUsers = payload.online || [];
-    renderUserList();
-});
-window.electronAPI.onUserStatusUpdate((payload) => {
-     console.log("Received user status update:", payload);
-     onlineUsers = payload.online || [];
-     renderUserList(); // Re-render the list with updated online status
-});
-window.electronAPI.onEditMessagePrompt((messageId) => {
-    handleEditMessage(messageId); // Trigger the edit UI
+    renderUserList(); // Re-render the list
 });
 
 

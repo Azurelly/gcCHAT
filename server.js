@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb'; // Import ObjectId
+import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
 import bcrypt from 'bcrypt';
 
 // --- Define __dirname for ES Modules ---
@@ -21,7 +21,7 @@ const DEFAULT_CHANNEL = 'general';
 
 // --- State ---
 let clients = new Map(); // ws -> { username, currentChannel, isAdmin }
-let onlineUsers = new Map(); // username -> { ws, currentChannel, isAdmin } - For presence tracking
+let onlineUsers = new Map(); // username -> { ws, currentChannel, isAdmin }
 let db;
 let messagesCollection;
 let usersCollection;
@@ -42,15 +42,24 @@ async function saveMessageToDB(messageData) { /* ... no change ... */ if (!messa
 // --- Broadcast Logic ---
 function broadcast(message) { /* ... no change ... */ const messageString = JSON.stringify(message); clients.forEach((userInfo, ws) => { if (userInfo && userInfo.username && ws.readyState === WebSocket.OPEN) { ws.send(messageString); } }); }
 function broadcastChannelList() { /* ... no change ... */ const message = { type: 'channel-list', payload: availableChannels }; console.log("[Server] Broadcasting updated channel list:", availableChannels); broadcast(message); }
-// Broadcast user presence updates
-function broadcastUserStatusUpdate() {
-    const userList = Array.from(onlineUsers.keys()); // Get list of online usernames
-    console.log("[Server] Broadcasting user status update:", userList);
-    broadcast({ type: 'user-status-update', payload: { online: userList } });
+
+// Broadcast user list (all users + online status)
+async function broadcastUserListUpdate() {
+    try {
+        const allUsersCursor = usersCollection.find({}, { projection: { username: 1, _id: 0 } });
+        const allUserDocs = await allUsersCursor.toArray();
+        const allUsernames = allUserDocs.map(u => u.username);
+        const onlineUsernames = Array.from(onlineUsers.keys());
+
+        console.log("[Server] Broadcasting user list update. All:", allUsernames, "Online:", onlineUsernames);
+        broadcast({ type: 'user-list-update', payload: { all: allUsernames, online: onlineUsernames } });
+    } catch (error) {
+        console.error("[Server] Error fetching or broadcasting user list:", error);
+    }
 }
 
 // --- Authentication Logic ---
-async function handleSignup(ws, data) { /* ... no change ... */ if (clients.get(ws)?.username) return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Already logged in' })); const { username, password } = data; if (!username || !password) return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Username and password required' })); try { const existingUser = await usersCollection.findOne({ username: username.toLowerCase() }); if (existingUser) return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Username already taken' })); const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS); await usersCollection.insertOne({ username: username.toLowerCase(), password: hashedPassword, admin: false, profilePicture: null, aboutMe: "", createdAt: new Date() }); console.log(`[Server] User created: ${username}`); ws.send(JSON.stringify({ type: 'signup-response', success: true })); } catch (error) { console.error("[Server] Signup error:", error); ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Server error during signup' })); } }
+async function handleSignup(ws, data) { /* ... no change ... */ if (clients.get(ws)?.username) return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Already logged in' })); const { username, password } = data; if (!username || !password) return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Username and password required' })); try { const existingUser = await usersCollection.findOne({ username: username.toLowerCase() }); if (existingUser) return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Username already taken' })); const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS); await usersCollection.insertOne({ username: username.toLowerCase(), password: hashedPassword, admin: false, profilePicture: null, aboutMe: "", createdAt: new Date() }); console.log(`[Server] User created: ${username}`); ws.send(JSON.stringify({ type: 'signup-response', success: true })); /* Note: We don't broadcast user list here, only after they log in */ } catch (error) { console.error("[Server] Signup error:", error); ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Server error during signup' })); } }
 
 async function handleLogin(ws, data) {
     if (clients.get(ws)?.username) return ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Already logged in' }));
@@ -66,14 +75,14 @@ async function handleLogin(ws, data) {
         const currentChannel = DEFAULT_CHANNEL;
         const userInfo = { username: user.username, currentChannel: currentChannel, isAdmin: user.admin || false };
         clients.set(ws, userInfo);
-        onlineUsers.set(user.username, { ws: ws, currentChannel: currentChannel, isAdmin: userInfo.isAdmin }); // Add to presence map
+        onlineUsers.set(user.username, { ws: ws, currentChannel: currentChannel, isAdmin: userInfo.isAdmin });
         console.log(`[Server] User logged in: ${user.username} (Admin: ${userInfo.isAdmin}), joined channel: ${currentChannel}`);
 
         const initialHistory = await loadHistoryFromDB(currentChannel);
         ws.send(JSON.stringify({ type: 'login-response', success: true, username: user.username, isAdmin: userInfo.isAdmin }));
         ws.send(JSON.stringify({ type: 'channel-list', payload: availableChannels }));
         ws.send(JSON.stringify({ type: 'history', channel: currentChannel, payload: initialHistory }));
-        broadcastUserStatusUpdate(); // Notify everyone about the new online user
+        broadcastUserListUpdate(); // Send full user list update
 
     } catch (error) { console.error("[Server] Login error:", error); ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Server error during login' })); }
 }
@@ -84,102 +93,9 @@ async function handleSwitchChannel(ws, data) { /* ... no change ... */ const use
 async function handleCreateChannel(ws, data) { /* ... no change ... */ const userInfo = clients.get(ws); if (!userInfo || !userInfo.isAdmin) { return ws.send(JSON.stringify({ type: 'error', message: 'Permission denied: Admin required' })); } const channelName = data.name?.trim().toLowerCase().replace(/\s+/g, '-'); if (!channelName) { return ws.send(JSON.stringify({ type: 'error', message: 'Invalid channel name' })); } if (availableChannels.includes(channelName)) { return ws.send(JSON.stringify({ type: 'error', message: `Channel '#${channelName}' already exists` })); } try { await channelsCollection.insertOne({ name: channelName, createdAt: new Date() }); console.log(`[Server] Admin ${userInfo.username} created channel: ${channelName}`); await loadChannels(); broadcastChannelList(); } catch (error) { console.error(`[Server] Error creating channel ${channelName}:`, error); ws.send(JSON.stringify({ type: 'error', message: 'Server error creating channel' })); } }
 async function handleDeleteChannel(ws, data) { /* ... no change ... */ const userInfo = clients.get(ws); if (!userInfo || !userInfo.isAdmin) { return ws.send(JSON.stringify({ type: 'error', message: 'Permission denied: Admin required' })); } const channelName = data.channel; if (!channelName || channelName === DEFAULT_CHANNEL) { return ws.send(JSON.stringify({ type: 'error', message: 'Invalid channel or cannot delete default channel' })); } if (!availableChannels.includes(channelName)) { return ws.send(JSON.stringify({ type: 'error', message: `Channel '#${channelName}' does not exist` })); } try { const deleteChannelResult = await channelsCollection.deleteOne({ name: channelName }); const deleteMessagesResult = await messagesCollection.deleteMany({ channel: channelName }); console.log(`[Server] Admin ${userInfo.username} deleted channel: ${channelName}. Channel deleted: ${deleteChannelResult.deletedCount}, Messages deleted: ${deleteMessagesResult.deletedCount}`); await loadChannels(); broadcastChannelList(); } catch (error) { console.error(`[Server] Error deleting channel ${channelName}:`, error); ws.send(JSON.stringify({ type: 'error', message: 'Server error deleting channel' })); } }
 async function handleGetUserProfile(ws, data) { /* ... no change ... */ const userInfo = clients.get(ws); if (!userInfo || !userInfo.username) return; const targetUsername = data.username; if (!targetUsername) return; try { const profile = await usersCollection.findOne( { username: targetUsername.toLowerCase() }, { projection: { username: 1, aboutMe: 1, profilePicture: 1, _id: 0 } } ); if (profile) { ws.send(JSON.stringify({ type: 'user-profile-response', success: true, profile: profile })); } else { ws.send(JSON.stringify({ type: 'user-profile-response', success: false, error: 'User not found' })); } } catch (error) { console.error(`[Server] Error fetching profile for ${targetUsername}:`, error); ws.send(JSON.stringify({ type: 'user-profile-response', success: false, error: 'Server error fetching profile' })); } }
-
-// --- New Handlers for Edit/Delete ---
-async function handleEditMessage(ws, data) {
-    const userInfo = clients.get(ws);
-    if (!userInfo || !userInfo.username) return; // Must be logged in
-
-    const { messageId, newText } = data;
-    if (!messageId || !newText?.trim()) {
-        return ws.send(JSON.stringify({ type: 'error', message: 'Invalid edit request' }));
-    }
-
-    try {
-        const messageObjectId = new ObjectId(messageId); // Convert string ID to ObjectId
-        const message = await messagesCollection.findOne({ _id: messageObjectId });
-
-        if (!message) {
-            return ws.send(JSON.stringify({ type: 'error', message: 'Message not found' }));
-        }
-        // Check ownership
-        if (message.sender !== userInfo.username) {
-            return ws.send(JSON.stringify({ type: 'error', message: 'You can only edit your own messages' }));
-        }
-
-        // Perform update
-        const updateResult = await messagesCollection.updateOne(
-            { _id: messageObjectId },
-            { $set: { text: newText.trim(), edited: true, editedTimestamp: Date.now() } }
-        );
-
-        if (updateResult.modifiedCount === 1) {
-            console.log(`[Server] User ${userInfo.username} edited message ${messageId}`);
-            // Broadcast the update
-            broadcast({ type: 'message-edited', payload: { _id: messageId, channel: message.channel, text: newText.trim(), edited: true } });
-        } else {
-             ws.send(JSON.stringify({ type: 'error', message: 'Failed to edit message' }));
-        }
-    } catch (error) {
-        console.error(`[Server] Error editing message ${messageId}:`, error);
-        ws.send(JSON.stringify({ type: 'error', message: 'Server error editing message' }));
-    }
-}
-
-async function handleDeleteMessage(ws, data) {
-     const userInfo = clients.get(ws);
-    if (!userInfo || !userInfo.username) return; // Must be logged in
-
-    const { messageId } = data;
-    if (!messageId) {
-        return ws.send(JSON.stringify({ type: 'error', message: 'Invalid delete request' }));
-    }
-
-    try {
-        const messageObjectId = new ObjectId(messageId); // Convert string ID to ObjectId
-        const message = await messagesCollection.findOne({ _id: messageObjectId });
-
-        if (!message) {
-            // Message already deleted, ignore
-            return;
-        }
-        // Check ownership (or admin status for deletion?) - For now, only self-delete
-        if (message.sender !== userInfo.username /* && !userInfo.isAdmin */) {
-            return ws.send(JSON.stringify({ type: 'error', message: 'You can only delete your own messages' }));
-        }
-
-        // Perform delete
-        const deleteResult = await messagesCollection.deleteOne({ _id: messageObjectId });
-
-        if (deleteResult.deletedCount === 1) {
-            console.log(`[Server] User ${userInfo.username} deleted message ${messageId}`);
-            // Broadcast the deletion
-            broadcast({ type: 'message-deleted', payload: { _id: messageId, channel: message.channel } });
-        } else {
-             ws.send(JSON.stringify({ type: 'error', message: 'Failed to delete message' }));
-        }
-    } catch (error) {
-        console.error(`[Server] Error deleting message ${messageId}:`, error);
-        ws.send(JSON.stringify({ type: 'error', message: 'Server error deleting message' }));
-    }
-}
-
-// --- Get All Users for User List ---
-async function handleGetAllUsers(ws, data) {
-    const userInfo = clients.get(ws);
-    if (!userInfo || !userInfo.username) return; // Must be logged in
-
-    try {
-        const allUsers = await usersCollection.find({}, { projection: { username: 1, _id: 0 } }).toArray();
-        const usernames = allUsers.map(u => u.username);
-        const onlineUsernames = Array.from(onlineUsers.keys());
-
-        ws.send(JSON.stringify({ type: 'all-users-list', payload: { all: usernames, online: onlineUsernames } }));
-    } catch (error) {
-        console.error("[Server] Error fetching all users:", error);
-        ws.send(JSON.stringify({ type: 'error', message: 'Server error fetching user list' }));
-    }
-}
+async function handleEditMessage(ws, data) { /* ... no change ... */ const userInfo = clients.get(ws); if (!userInfo || !userInfo.username) return; const { messageId, newText } = data; if (!messageId || !newText?.trim()) { return ws.send(JSON.stringify({ type: 'error', message: 'Invalid edit request' })); } try { const messageObjectId = new ObjectId(messageId); const message = await messagesCollection.findOne({ _id: messageObjectId }); if (!message) { return ws.send(JSON.stringify({ type: 'error', message: 'Message not found' })); } if (message.sender !== userInfo.username) { return ws.send(JSON.stringify({ type: 'error', message: 'You can only edit your own messages' })); } const updateResult = await messagesCollection.updateOne( { _id: messageObjectId }, { $set: { text: newText.trim(), edited: true, editedTimestamp: Date.now() } } ); if (updateResult.modifiedCount === 1) { console.log(`[Server] User ${userInfo.username} edited message ${messageId}`); broadcast({ type: 'message-edited', payload: { _id: messageId, channel: message.channel, text: newText.trim(), edited: true } }); } else { ws.send(JSON.stringify({ type: 'error', message: 'Failed to edit message' })); } } catch (error) { console.error(`[Server] Error editing message ${messageId}:`, error); ws.send(JSON.stringify({ type: 'error', message: 'Server error editing message' })); } }
+async function handleDeleteMessage(ws, data) { /* ... no change ... */ const userInfo = clients.get(ws); if (!userInfo || !userInfo.username) return; const { messageId } = data; if (!messageId) { return ws.send(JSON.stringify({ type: 'error', message: 'Invalid delete request' })); } try { const messageObjectId = new ObjectId(messageId); const message = await messagesCollection.findOne({ _id: messageObjectId }); if (!message) { return; } if (message.sender !== userInfo.username) { return ws.send(JSON.stringify({ type: 'error', message: 'You can only delete your own messages' })); } const deleteResult = await messagesCollection.deleteOne({ _id: messageObjectId }); if (deleteResult.deletedCount === 1) { console.log(`[Server] User ${userInfo.username} deleted message ${messageId}`); broadcast({ type: 'message-deleted', payload: { _id: messageId, channel: message.channel } }); } else { ws.send(JSON.stringify({ type: 'error', message: 'Failed to delete message' })); } } catch (error) { console.error(`[Server] Error deleting message ${messageId}:`, error); ws.send(JSON.stringify({ type: 'error', message: 'Server error deleting message' })); } }
+// REMOVED handleGetAllUsers - Now handled by broadcastUserListUpdate
 
 
 // --- Server Setup ---
@@ -205,9 +121,9 @@ async function startServer() {
                     case 'create-channel': await handleCreateChannel(ws, parsedMessage); break;
                     case 'delete-channel': await handleDeleteChannel(ws, parsedMessage); break;
                     case 'get-user-profile': await handleGetUserProfile(ws, parsedMessage); break;
-                    case 'edit-message': await handleEditMessage(ws, parsedMessage); break; // New
-                    case 'delete-message': await handleDeleteMessage(ws, parsedMessage); break; // New
-                    case 'get-all-users': await handleGetAllUsers(ws, parsedMessage); break; // New
+                    case 'edit-message': await handleEditMessage(ws, parsedMessage); break;
+                    case 'delete-message': await handleDeleteMessage(ws, parsedMessage); break;
+                    // Removed 'get-all-users' case
                     default: console.warn(`[Server] Received unknown message type: ${parsedMessage.type}`);
                 }
             } catch (e) { console.error('[Server] Failed to parse message or process:', message.toString(), e); }
@@ -216,8 +132,8 @@ async function startServer() {
         ws.on('close', () => {
             const userInfo = clients.get(ws);
             if (userInfo && userInfo.username) {
-                onlineUsers.delete(userInfo.username); // Remove from presence map
-                broadcastUserStatusUpdate(); // Notify others
+                onlineUsers.delete(userInfo.username);
+                broadcastUserListUpdate(); // Send updated list on disconnect
             }
             console.log(`[Server] Client disconnected: ${clientIdentifier}${userInfo?.username ? ` (${userInfo.username})` : ''}`);
             clients.delete(ws);
@@ -226,8 +142,8 @@ async function startServer() {
         ws.on('error', (error) => {
             const userInfo = clients.get(ws);
              if (userInfo && userInfo.username) {
-                onlineUsers.delete(userInfo.username); // Remove from presence map on error too
-                broadcastUserStatusUpdate();
+                onlineUsers.delete(userInfo.username);
+                broadcastUserListUpdate(); // Send updated list on error/disconnect
             }
             console.error(`[Server] WebSocket error for client ${clientIdentifier}${userInfo?.username ? ` (${userInfo.username})` : ''}:`, error);
             clients.delete(ws);
