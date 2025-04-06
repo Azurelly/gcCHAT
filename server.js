@@ -3,7 +3,7 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { MongoClient, ServerApiVersion } from 'mongodb';
-import bcrypt from 'bcrypt'; // Import bcrypt
+import bcrypt from 'bcrypt';
 
 // --- Define __dirname for ES Modules ---
 const __filename = fileURLToPath(import.meta.url);
@@ -14,18 +14,17 @@ const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://Azurely:<po2yOHjRLNJ4Gapv>@gcchat.aqgwni3.mongodb.net/chatApp?retryWrites=true&w=majority&appName=gcCHAT"; // Ensure correct password here
 const DB_NAME = 'chatApp';
 const MESSAGES_COLLECTION_NAME = 'messages';
-const USERS_COLLECTION_NAME = 'users'; // Collection for user accounts
-const SALT_ROUNDS = 10; // Cost factor for bcrypt hashing
+const USERS_COLLECTION_NAME = 'users';
+const SALT_ROUNDS = 10;
 
 // --- State ---
-let clients = new Map(); // Use Map to store ws -> username mapping for authenticated users
+let clients = new Map();
 let db;
 let messagesCollection;
-let usersCollection; // Collection object for users
+let usersCollection;
 
 // --- MongoDB Connection ---
 async function connectDB() {
-    // Basic check for placeholder password - replace <...> with your actual password in the env var!
     if (!MONGODB_URI || MONGODB_URI.includes("<") || MONGODB_URI.includes(">")) {
         console.error("[Server] ERROR: MongoDB connection string is missing, invalid, or contains a placeholder password.");
         console.error("[Server] Please set the MONGODB_URI environment variable with your actual connection string.");
@@ -38,10 +37,10 @@ async function connectDB() {
         await client.connect();
         db = client.db(DB_NAME);
         messagesCollection = db.collection(MESSAGES_COLLECTION_NAME);
-        usersCollection = db.collection(USERS_COLLECTION_NAME); // Get users collection
+        usersCollection = db.collection(USERS_COLLECTION_NAME);
         console.log("[Server] Successfully connected to MongoDB Atlas!");
         await messagesCollection.createIndex({ timestamp: 1 });
-        await usersCollection.createIndex({ username: 1 }, { unique: true }); // Ensure usernames are unique
+        await usersCollection.createIndex({ username: 1 }, { unique: true });
         console.log("[Server] Database indexes checked/created.");
     } catch (error) {
         console.error("[Server] Failed to connect to MongoDB:", error);
@@ -77,9 +76,8 @@ async function saveMessageToDB(messageData) {
 // --- Broadcast Logic ---
 function broadcast(message) {
   const messageString = JSON.stringify(message);
-  // Send only to authenticated clients
-  clients.forEach((username, ws) => {
-    if (username && ws.readyState === WebSocket.OPEN) { // Check if username is associated (logged in)
+  clients.forEach((userInfo, ws) => { // Iterate over map
+    if (userInfo && userInfo.username && ws.readyState === WebSocket.OPEN) { // Check if user info exists (logged in)
       ws.send(messageString);
     }
   });
@@ -87,10 +85,15 @@ function broadcast(message) {
 
 // --- Authentication Logic ---
 async function handleSignup(ws, data) {
+    // Prevent signup if already logged in on this connection
+    if (clients.get(ws)?.username) {
+        return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Already logged in' }));
+    }
     const { username, password } = data;
     if (!username || !password) {
         return ws.send(JSON.stringify({ type: 'signup-response', success: false, error: 'Username and password required' }));
     }
+    // Add username validation (length, characters) here in a real app
     try {
         const existingUser = await usersCollection.findOne({ username: username.toLowerCase() });
         if (existingUser) {
@@ -107,6 +110,14 @@ async function handleSignup(ws, data) {
 }
 
 async function handleLogin(ws, data) {
+    // Prevent login if already logged in on this connection
+    if (clients.get(ws)?.username) {
+        console.log(`[Server] User ${clients.get(ws).username} attempted to log in again on the same connection.`);
+        // Optionally send back current logged-in status? Or just ignore.
+        // Let's send an error for clarity
+        return ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Already logged in' }));
+    }
+
     const { username, password } = data;
     if (!username || !password) {
         return ws.send(JSON.stringify({ type: 'login-response', success: false, error: 'Username and password required' }));
@@ -122,11 +133,12 @@ async function handleLogin(ws, data) {
         }
 
         // Login successful - associate username with this WebSocket connection
-        clients.set(ws, user.username); // Store username (use original case if desired, but comparison was lowercase)
+        // Store user info object instead of just username if needed later
+        clients.set(ws, { username: user.username }); // Use the original case username from DB
         console.log(`[Server] User logged in: ${user.username}`);
 
-        // Send login success and initial history
-        const initialHistory = await loadHistoryFromDB();
+        // Send login success and initial history ONCE
+        const initialHistory = await loadHistoryFromDB(); // Load history only now
         ws.send(JSON.stringify({ type: 'login-response', success: true, username: user.username }));
         ws.send(JSON.stringify({ type: 'history', payload: initialHistory }));
 
@@ -137,23 +149,21 @@ async function handleLogin(ws, data) {
 }
 
 async function handleChatMessage(ws, data) {
-    const username = clients.get(ws); // Get username associated with this connection
-    if (!username) {
+    const userInfo = clients.get(ws); // Get user info associated with this connection
+    if (!userInfo || !userInfo.username) { // Check if logged in
         console.warn("[Server] Received chat message from unauthenticated client.");
-        // Optionally send an error back to the specific client
-        // ws.send(JSON.stringify({ type: 'error', message: 'Not authenticated' }));
-        return; // Ignore message if not logged in
+        return;
     }
 
     if (data.text) {
         const messageData = {
             type: 'chat',
-            text: data.text, // Sanitize this in a real app!
-            sender: username, // Use the authenticated username
+            text: data.text,
+            sender: userInfo.username, // Use the authenticated username
             timestamp: Date.now()
         };
         await saveMessageToDB(messageData);
-        broadcast(messageData); // Broadcast includes sender field now
+        broadcast(messageData);
     } else {
         console.warn('[Server] Received invalid chat message format:', data);
     }
@@ -172,16 +182,13 @@ async function startServer() {
     server.on('connection', (ws, req) => {
         const clientIdentifier = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
         console.log(`[Server] Client connected: ${clientIdentifier}`);
-        // Don't associate user yet, wait for login
         clients.set(ws, null); // Mark as connected but not authenticated
-
-        // Don't send history immediately, wait for login
 
         ws.on('message', async (message) => {
             let parsedMessage;
             try {
                 parsedMessage = JSON.parse(message);
-                console.log('[Server] Received:', parsedMessage);
+                // console.log('[Server] Received:', parsedMessage); // Can be noisy
 
                 switch (parsedMessage.type) {
                     case 'signup':
@@ -198,20 +205,18 @@ async function startServer() {
                 }
             } catch (e) {
                 console.error('[Server] Failed to parse message or process:', message.toString(), e);
-                // Optionally send error back to client if format is wrong
-                // ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
             }
         });
 
         ws.on('close', () => {
-            const username = clients.get(ws);
-            console.log(`[Server] Client disconnected: ${clientIdentifier}${username ? ` (${username})` : ''}`);
-            clients.delete(ws); // Remove client from map on disconnect
+            const userInfo = clients.get(ws);
+            console.log(`[Server] Client disconnected: ${clientIdentifier}${userInfo?.username ? ` (${userInfo.username})` : ''}`);
+            clients.delete(ws);
         });
 
         ws.on('error', (error) => {
-            const username = clients.get(ws);
-            console.error(`[Server] WebSocket error for client ${clientIdentifier}${username ? ` (${username})` : ''}:`, error);
+            const userInfo = clients.get(ws);
+            console.error(`[Server] WebSocket error for client ${clientIdentifier}${userInfo?.username ? ` (${userInfo.username})` : ''}:`, error);
             clients.delete(ws);
         });
     });
@@ -228,12 +233,11 @@ async function startServer() {
         console.log('[Server] Shutting down...');
         server.close(() => {
             console.log('[Server] WebSocket server closed.');
-            // Consider closing MongoDB client here if necessary
             process.exit(0);
         });
         setTimeout(() => {
             console.log('[Server] Forcing remaining connections closed.');
-            clients.forEach((username, ws) => ws.terminate());
+            clients.forEach((userInfo, ws) => ws.terminate());
             process.exit(1);
         }, 3000);
     });
