@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 3000;
 // Use environment variable for connection string (recommended for deployment)
 // Fallback to hardcoded string for local testing ONLY (replace with your actual password if testing locally)
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://Azurely:<Azurely12123>@gcchat.aqgwni3.mongodb.net/gcCHAT?retryWrites=true&w=majority&appName=gcCHAT";
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://Azurely:<Azurely12123>@gcchat.aqgwni3.mongodb.net/?retryWrites=true&w=majority&appName=gcCHAT";
 const DB_NAME = 'gcCHAT'; // Your database name
 const COLLECTION_NAME = 'messages'; // Collection to store messages
 
