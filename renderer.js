@@ -657,6 +657,7 @@ window.electronAPI.onLoginResponse((response) => {
     userAreaAvatar.textContent = localUsername.charAt(0)?.toUpperCase() || '?';
     userAreaAvatar.style.backgroundColor = getAvatarColor(localUsername);
     connectionStatusSpan.textContent = 'Online';
+    userSettingsButton.style.display = 'block'; // Explicitly show button on successful login
   } else {
     showAuthError(response.error || 'Login failed.');
   }
