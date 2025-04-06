@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 // Use environment variable for connection string (recommended for deployment)
 // Fallback to hardcoded string for local testing ONLY (replace with your actual password if testing locally)
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://Azurely:<Azurely12123>@gcchat.aqgwni3.mongodb.net/gcCHAT?retryWrites=true&w=majority&appName=gcCHAT";
-const DB_NAME = 'chatApp'; // Your database name
+const DB_NAME = 'gcCHAT'; // Your database name
 const COLLECTION_NAME = 'messages'; // Collection to store messages
 
 // --- State ---
@@ -23,7 +23,7 @@ let messagesCollection; // Database collection object
 
 // --- MongoDB Connection ---
 async function connectDB() {
-    if (!MONGODB_URI || MONGODB_URI.includes("<password>") || MONGODB_URI.includes("<po2yOHjRLNJ4Gapv>")) {
+    if (!MONGODB_URI || MONGODB_URI.includes("<password>") || MONGODB_URI.includes("<Azurely12123>")) {
         console.error("[Server] ERROR: MongoDB connection string is missing, invalid, or contains a placeholder password.");
         console.error("[Server] Please set the MONGODB_URI environment variable with your actual connection string.");
         process.exit(1); // Exit if connection string is invalid
