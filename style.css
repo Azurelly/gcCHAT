@@ -1,3 +1,7 @@
+.message-group .message-avatar { position: absolute; left: 20px; /* Align with padding */ top: 0; width: 40px; height: 40px; border-radius: 50%; background-color: #7289da; color: #fff; font-weight: 500; font-size: 1.2em; display: flex; align-items: center; justify-content: center; flex-shrink: 0; text-transform: uppercase; cursor: pointer; }
+.message-group-content { display: flex; flex-direction: column; padding-left: 55px; /* Reduced padding: Avatar(40) + Gap(15) */ width: 100%; box-sizing: border-box; /* Include padding in width */ }
+.message-group .message-header { display: flex; align-items: baseline; margin-bottom: 3px; }
+.message-group .sender { font-weight: 500; color: #fff; margin-right: 8px; font-size: 1em; cursor: pointer; }
 /* General Body & Font Styles */
 body { font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 0; height: 100vh; background-color: #36393f; color: #dcddde; display: flex; justify-content: center; align-items: center; font-size: 16px; overflow: hidden; }
 
