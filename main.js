@@ -12,6 +12,7 @@ const { autoUpdater } = pkg_updater;
 const require = createRequire(import.meta.url);
 const pkg = require('./package.json');
 const appVersion = pkg.version;
+console.log('[Main Init] Imported autoUpdater:', typeof autoUpdater); // Log type
 
 // --- Configuration ---
 const SERVER_URL = 'wss://gcchat.onrender.com';
@@ -243,11 +244,18 @@ function createWindow() {
   mainWindow.webContents.once('did-finish-load', () => {
     connectToServer();
     // Check for updates after the window is ready and loaded
-    console.log('[AutoUpdater] Checking for updates...');
-    autoUpdater.checkForUpdatesAndNotify();
+    console.log('[Main] did-finish-load: Checking for updates...');
+    if (autoUpdater) {
+      autoUpdater.checkForUpdatesAndNotify();
+    } else {
+      console.error('[Main] did-finish-load: autoUpdater object is not valid!');
+    }
   });
+}
 
-  // Add listeners for auto-updater events for logging
+app.whenReady().then(() => {
+  console.log('[Main] App is ready. Setting up AutoUpdater listeners...'); // Log readiness
+  // Set up auto-updater event listeners *before* creating the window
   autoUpdater.on('checking-for-update', () => {
     console.log('[AutoUpdater] Checking for update...');
   });
@@ -271,9 +279,10 @@ function createWindow() {
     // The 'checkForUpdatesAndNotify' automatically prompts the user to restart.
     // If we wanted manual control, we'd call autoUpdater.quitAndInstall() here after user confirmation.
   });
-}
 
-app.whenReady().then(createWindow);
+  // Now create the main window
+  createWindow();
+});
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
