@@ -5,8 +5,11 @@ import os from 'os';
 import { WebSocket } from 'ws';
 import Store from 'electron-store';
 // Correct import for CommonJS module 'electron-updater' in an ES Module context
-import pkg from 'electron-updater';
-const { autoUpdater } = pkg;
+import pkg_updater from 'electron-updater'; // Rename to avoid conflict
+const { autoUpdater } = pkg_updater;
+// Import package.json to get version (using import assertion)
+import pkg from './package.json' assert { type: 'json' };
+const appVersion = pkg.version;
 
 // --- Configuration ---
 const SERVER_URL = 'wss://gcchat.onrender.com';
@@ -61,6 +64,7 @@ function connectToServer() {
     connecting: true,
     serverIp: serverAddress,
     localHostname: os.hostname(),
+    version: appVersion // Add version here
   });
   try {
     clientSocket = new WebSocket(serverAddress);
@@ -84,6 +88,8 @@ function connectToServer() {
       serverIp: serverAddress,
       localHostname: os.hostname(),
     });
+    // Log version on successful connection or startup
+    console.log(`[Client] gcCHAT Version: ${appVersion}`);
   });
   clientSocket.on('message', (message) => {
     try {
@@ -488,10 +494,10 @@ ipcMain.on('request-status', (_event) => {
   // Reply immediately with current known state
   // Fetch profile picture from currentProfileData if available (might need to store it in main process state)
   // For now, let's assume it's part of the loggedInUsername state or fetched separately if needed.
-  // We'll rely on the server sending updates for now.
-  _event.reply('status-update', {
-    connected: !!loggedInUsername, // True only if logged in
-    wsConnected: clientSocket && clientSocket.readyState === WebSocket.OPEN,
+    // We'll rely on the server sending updates for most things, but include version here too
+    _event.reply('status-update', {
+      connected: !!loggedInUsername, // True only if logged in
+      wsConnected: clientSocket && clientSocket.readyState === WebSocket.OPEN,
     connecting:
       clientSocket && clientSocket.readyState === WebSocket.CONNECTING,
     searching: false, // Bonjour removed
@@ -500,6 +506,7 @@ ipcMain.on('request-status', (_event) => {
     username: loggedInUsername,
     currentChannel: currentChannel,
     isAdmin: isAdmin,
+    version: appVersion // Include version in status reply
     // profilePicture: currentProfileData?.profilePicture // Include if storing locally
   });
 });

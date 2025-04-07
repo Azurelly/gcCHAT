@@ -78,6 +78,7 @@ const attachmentButton = document.getElementById('attachment-button');
 const attachmentInput = document.getElementById('attachment-input');
 const newMessagesBar = document.getElementById('new-messages-bar');
 const mentionSuggestionsDiv = document.getElementById('mention-suggestions'); // Added
+const appVersionSpan = document.getElementById('app-version'); // Added
 
 // --- State ---
 let localUsername = '';
@@ -761,6 +762,10 @@ function updateStatus(status) {
   if (status.profilePicture !== undefined) {
      if (!currentProfileData) currentProfileData = {};
      currentProfileData.profilePicture = status.profilePicture;
+  }
+  // Update version display
+  if (status.version && appVersionSpan) {
+    appVersionSpan.textContent = `v${status.version}`;
   }
 
   if (status.connected) {
