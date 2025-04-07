@@ -27,11 +27,11 @@ const store = new Store({
         '^.+$': {
           type: 'object',
           properties: {
-            hasUnread: { type: 'boolean', default: false },
-            hasMention: { type: 'boolean', default: false },
+            unreadMessageCount: { type: 'number', default: 0 }, // Total unread
+            unreadMentionCount: { type: 'number', default: 0 }, // Unread mentions specifically
             // lastSeenTimestamp: { type: 'number', default: 0 } // Optional: Could add later
           },
-          required: ['hasUnread', 'hasMention']
+          required: ['unreadMessageCount', 'unreadMentionCount']
         }
       },
       default: {}

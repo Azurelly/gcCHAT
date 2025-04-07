@@ -196,9 +196,15 @@ body {
   cursor: pointer;
   font-weight: 500;
   text-decoration: none;
-  position: relative; /* Needed for absolute positioning of indicators */
-  gap: 4px; /* Add small gap between text and indicators */
+  position: relative; /* Keep for potential future use, but flexbox handles layout now */
+  gap: 4px; /* Gap between hash and channel name */
+  justify-content: space-between; /* Push indicators to the right */
 }
+.channel-item > span:not([style*="display: none"]) {
+  /* Add gap only between visible indicators and channel name */
+   margin-left: 4px;
+}
+
 .channel-item::before {
   content: '#';
   margin-right: 6px;
@@ -221,18 +227,12 @@ body {
 }
 
 /* Styles for unread/mention indicators */
-.channel-item .mention-indicator {
-  background-color: #f04747; /* Red color for mention */
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block; /* Initially hidden via JS */
-  margin-left: auto; /* Push to the right */
-  flex-shrink: 0;
-}
+/* Remove old .mention-indicator dot style */
+/* .channel-item .mention-indicator { ... } */
 
-.channel-item .unread-badge {
-  background-color: #f04747; /* Red color for badge */
+/* Mention Badge (Red number) - Appears next to channel name */
+.channel-item .mention-badge {
+  background-color: #f04747; /* Red color */
   color: #fff;
   font-size: 0.7em;
   font-weight: 700;
@@ -240,22 +240,24 @@ body {
   border-radius: 10px;
   line-height: 1;
   display: inline-block; /* Initially hidden via JS */
-  margin-left: 4px; /* Space from mention indicator or channel name */
+  /* margin-left: 4px; */ /* Removed, gap handles spacing */
   flex-shrink: 0;
+  order: 1; /* Ensure it appears after channel name but before new count */
 }
 
-/* New indicator for just unread messages (no mention) */
+/* New Message Count Indicator (Grey text "X new") - Pushed to the far right */
 .channel-item .new-message-count {
-  background-color: #4f545c; /* Grey background */
-  color: #dcddde; /* Light grey text */
+  /* background-color: #4f545c; */ /* No background */
+  color: #8e9297; /* Dim grey text */
   font-size: 0.7em;
-  font-weight: 700;
-  padding: 1px 5px;
-  border-radius: 10px;
+  font-weight: 500; /* Normal weight */
+  /* padding: 1px 5px; */ /* No padding */
+  /* border-radius: 10px; */ /* No border radius */
   line-height: 1;
   display: inline-block; /* Initially hidden via JS */
-  margin-left: auto; /* Push to the right */
+  margin-left: auto; /* Push to the far right */
   flex-shrink: 0;
+  order: 2; /* Ensure it appears last */
 }
 
 
@@ -265,15 +267,15 @@ body {
   font-weight: 600; /* Make text bold */
 }
 .channel-item.has-mention:not(.active) {
-   background-color: transparent; /* Don't apply hover background if unread but not active */
+   background-color: transparent;
 }
 .channel-item.has-mention:not(.active):hover {
-   background-color: #3a3c43; /* Apply hover background on actual hover */
+   background-color: #3a3c43;
 }
 .channel-item.has-mention::before {
   color: #fff; /* Make hash white for mentions */
 }
-/* .channel-item.active.has-mention::before { color: #fff; } */ /* Already covered */
+/* .channel-item.active.has-mention::before { color: #fff; } */ /* Already covered by .active */
 
 /* Style for channel item when it has NEW MESSAGES (no mention) */
 .channel-item.has-new-message {
@@ -291,6 +293,14 @@ body {
 }
 .channel-item.active.has-new-message::before {
   color: #fff; /* Make hash white if active */
+}
+
+/* Ensure channel name itself doesn't shrink */
+.channel-item > a:first-of-type { /* Assuming channel name is the first direct child link/text node */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-grow: 1; /* Allow name to take up space */
 }
 
 #user-area {
