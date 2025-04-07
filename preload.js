@@ -86,6 +86,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onError: (callback) =>
     ipcRenderer.on('error', (_event, value) => callback(value)),
   requestStatus: () => ipcRenderer.send('request-status'),
+  // Notifications (Renderer -> Main)
+  showNotification: (options) => ipcRenderer.send('show-notification', options),
 
   // Cleanup
   cleanupListeners: () => {
@@ -108,6 +110,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('status-update');
     ipcRenderer.removeAllListeners('send-error');
     ipcRenderer.removeAllListeners('error');
+    // No listener cleanup needed for 'show-notification' as it's Main -> OS
     // Add cleanup for any potential future listeners related to attachments
     // ipcRenderer.removeAllListeners('file-upload-progress');
     // ipcRenderer.removeAllListeners('file-upload-complete');

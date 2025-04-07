@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, Notification } from 'electron'; // Added Notification
 import path from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
@@ -67,6 +67,17 @@ function connectToServer() {
           break;
         case 'chat':
           mainWindow?.webContents.send('message-received', parsedMessage);
+          // Check for mention and show notification if window not focused
+          const mentionPattern = new RegExp(`@${loggedInUsername}\\b`, 'i');
+          if (
+            loggedInUsername && // Only check if logged in
+            parsedMessage.text &&
+            parsedMessage.sender !== loggedInUsername && // Don't notify for self-mentions
+            mentionPattern.test(parsedMessage.text) &&
+            (!mainWindow || !mainWindow.isFocused()) // Only notify if window not focused or minimized
+          ) {
+             showMentionNotification(parsedMessage.sender, parsedMessage.text);
+          }
           break;
         case 'login-response':
           if (parsedMessage.success) {
@@ -462,3 +473,44 @@ ipcMain.on('request-status', (_event) => {
     // profilePicture: currentProfileData?.profilePicture // Include if storing locally
   });
 });
+
+// Handle request from renderer to show a notification (e.g., for testing or other purposes)
+ipcMain.on('show-notification', (_event, options) => {
+  if (Notification.isSupported()) {
+    const notification = new Notification({
+      title: options.title || 'gcCHAT',
+      body: options.body || '',
+      silent: options.silent || false, // Add sound by default unless specified
+      // icon: path.join(__dirname, 'assets/icon.png') // Optional: Add an icon
+    });
+    notification.show();
+    // Optional: Handle click event
+    notification.on('click', () => {
+       if (mainWindow) {
+         if (mainWindow.isMinimized()) mainWindow.restore();
+         mainWindow.focus();
+       }
+    });
+  } else {
+    console.warn('[Main] Notifications not supported on this system.');
+  }
+});
+
+// Helper function to show mention notification
+function showMentionNotification(sender, messageText) {
+   if (Notification.isSupported()) {
+    const notification = new Notification({
+      title: `Mention from ${sender}`,
+      body: messageText.length > 50 ? messageText.substring(0, 47) + '...' : messageText, // Truncate long messages
+      silent: false // Play sound for mentions
+      // icon: path.join(__dirname, 'assets/mention-icon.png') // Optional: Specific mention icon
+    });
+    notification.show();
+    notification.on('click', () => {
+       if (mainWindow) {
+         if (mainWindow.isMinimized()) mainWindow.restore();
+         mainWindow.focus();
+       }
+    });
+  }
+}

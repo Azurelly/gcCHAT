@@ -76,7 +76,8 @@ const settingsAvatarPreview = document.getElementById('settings-avatar-preview')
 const profilePictureInput = document.getElementById('profile-picture-input');
 const attachmentButton = document.getElementById('attachment-button');
 const attachmentInput = document.getElementById('attachment-input');
-const newMessagesBar = document.getElementById('new-messages-bar'); // Added
+const newMessagesBar = document.getElementById('new-messages-bar');
+const mentionSuggestionsDiv = document.getElementById('mention-suggestions'); // Added
 
 // --- State ---
 let localUsername = '';
@@ -92,9 +93,16 @@ let partyModeActive = false;
 let typingTimeout = null;
 let currentlyTypingUsers = [];
 let currentProfileData = null; // Store own fetched profile data
-let isScrolledNearBottom = true; // Track if user is near the bottom
-let newMessagesCount = 0; // Count unseen messages
-let scrollTimeout = null; // Debounce scroll listener
+let isScrolledNearBottom = true;
+let newMessagesCount = 0;
+let scrollTimeout = null;
+// Mention State
+let isMentioning = false;
+let mentionQuery = '';
+let mentionStartIndex = -1; // Track where the '@' started
+let mentionSuggestions = [];
+let selectedMentionIndex = -1;
+
 
 // --- UI Switching ---
 function showAuthView(showLogin = true) {
@@ -373,7 +381,7 @@ function addMessage(messageData) {
   if (isConsecutive && messagesDiv.lastElementChild?.classList.contains('message-group')) {
     messageGroup = messagesDiv.lastElementChild;
     contentDiv = messageGroup.querySelector('.message-group-content');
-    messageGroup.style.marginTop = '2px';
+    // messageGroup.style.marginTop = '2px'; // Remove direct style manipulation
   } else {
     messageGroup = document.createElement('div');
     messageGroup.classList.add('message-group');
@@ -416,6 +424,12 @@ function addMessage(messageData) {
   const textDiv = document.createElement('div');
   textDiv.classList.add('message-text');
   textDiv.dataset.messageId = messageId;
+  // Add consecutive class if needed (before appending textDiv)
+  if (isConsecutive) {
+    messageGroup.classList.add('consecutive');
+  } else {
+    messageGroup.classList.remove('consecutive'); // Ensure it's removed if not consecutive
+  }
 
   // Check if it's an attachment message
   if (messageData.attachment) {
@@ -441,8 +455,16 @@ function addMessage(messageData) {
       textDiv.appendChild(link);
     }
   } else {
-    // Regular text message
-    textDiv.textContent = messageData.text;
+    // Regular text message - check for mentions
+    const mentionPattern = new RegExp(`@${localUsername}\\b`, 'i'); // Case-insensitive mention check
+    if (messageData.text && mentionPattern.test(messageData.text)) {
+      messageGroup.classList.add('mentioned'); // Add class to highlight the whole group
+      // Optionally, wrap the mention itself in a span for specific styling
+      // textDiv.innerHTML = messageData.text.replace(mentionPattern, '<span class="mention-highlight">$&</span>');
+      textDiv.textContent = messageData.text; // Keep it simple for now
+    } else {
+      textDiv.textContent = messageData.text;
+    }
   }
 
   if (messageData.edited && !messageData.attachment) { // Don't show (edited) for attachments for now
@@ -462,12 +484,6 @@ function addMessage(messageData) {
   lastMessageSender = sender;
 
   const wasNearBottom = isScrolledNearBottom; // Check before adding the message
-
-  // (Keep existing message group logic...)
-  // ... [avatar, header, contentDiv setup] ...
-
-  contentDiv.appendChild(textDiv);
-  lastMessageSender = sender;
 
   // Scroll logic
   if (sender === localUsername || wasNearBottom) {
@@ -666,19 +682,152 @@ function updateStatus(status) {
 
 // --- Typing Indicator ---
 function updateTypingIndicator() {
-  const typingNames = currentlyTypingUsers.filter((name) => name !== localUsername);
+  // Don't filter out local user anymore
+  const typingNames = currentlyTypingUsers; //.filter((name) => name !== localUsername);
   let text = '';
+  const dots = '...'; // Static dots
+
   if (typingNames.length === 1) {
-    text = `<span>${typingNames[0]}</span> is typing<span class="dots"><span>.</span><span>.</span><span>.</span></span>`;
+    text = `<span>${typingNames[0]}</span> is typing${dots}`;
   } else if (typingNames.length === 2) {
-    text = `<span>${typingNames[0]}</span> and <span>${typingNames[1]}</span> are typing<span class="dots"><span>.</span><span>.</span><span>.</span></span>`;
+    text = `<span>${typingNames[0]}</span> and <span>${typingNames[1]}</span> are typing${dots}`;
   } else if (typingNames.length === 3) {
-    text = `<span>${typingNames[0]}</span>, <span>${typingNames[1]}</span>, and <span>${typingNames[2]}</span> are typing<span class="dots"><span>.</span><span>.</span><span>.</span></span>`;
+    text = `<span>${typingNames[0]}</span>, <span>${typingNames[1]}</span>, and <span>${typingNames[2]}</span> are typing${dots}`;
   } else if (typingNames.length > 3) {
-    text = `Multiple people are typing<span class="dots"><span>.</span><span>.</span><span>.</span></span>`;
+    text = `Multiple people are typing${dots}`;
   }
   typingIndicatorDiv.innerHTML = text;
 }
+
+// --- Mention Logic ---
+function showMentionSuggestions() {
+  mentionSuggestionsDiv.innerHTML = ''; // Clear previous
+  if (mentionSuggestions.length === 0) {
+    hideMentionSuggestions();
+    return;
+  }
+
+  mentionSuggestions.forEach((user, index) => {
+    const item = document.createElement('div');
+    item.classList.add('mention-suggestion-item');
+    item.dataset.username = user.username;
+    if (index === selectedMentionIndex) {
+      item.classList.add('selected');
+    }
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('user-avatar'); // Reuse class
+    if (user.profilePicture) {
+      avatarDiv.style.backgroundImage = `url('${user.profilePicture}')`;
+    } else {
+      avatarDiv.textContent = user.username.charAt(0)?.toUpperCase() || '?';
+      avatarDiv.style.backgroundColor = getAvatarColor(user.username);
+    }
+
+    const nameSpan = document.createElement('span');
+    nameSpan.classList.add('user-name'); // Reuse class
+    nameSpan.textContent = user.username;
+
+    item.appendChild(avatarDiv);
+    item.appendChild(nameSpan);
+
+    item.addEventListener('mousedown', (e) => { // Use mousedown to prevent blur event firing first
+      e.preventDefault();
+      selectMention(user.username);
+    });
+
+    mentionSuggestionsDiv.appendChild(item);
+  });
+
+  mentionSuggestionsDiv.style.display = 'block';
+}
+
+function hideMentionSuggestions() {
+  isMentioning = false;
+  mentionSuggestionsDiv.style.display = 'none';
+  mentionSuggestionsDiv.innerHTML = '';
+  selectedMentionIndex = -1;
+}
+
+function updateMentionSelection(direction) { // 1 for down, -1 for up
+  const items = mentionSuggestionsDiv.querySelectorAll('.mention-suggestion-item');
+  if (!items.length) return;
+
+  items[selectedMentionIndex]?.classList.remove('selected'); // Remove previous selection
+
+  selectedMentionIndex += direction;
+
+  if (selectedMentionIndex < 0) {
+    selectedMentionIndex = items.length - 1; // Wrap around to bottom
+  } else if (selectedMentionIndex >= items.length) {
+    selectedMentionIndex = 0; // Wrap around to top
+  }
+
+  items[selectedMentionIndex]?.classList.add('selected');
+  items[selectedMentionIndex]?.scrollIntoView({ block: 'nearest' }); // Keep selected item visible
+}
+
+function selectMention(username) {
+  if (!username) return; // Handle case where no suggestion is selected
+
+  const currentValue = messageInput.value;
+  const beforeMention = currentValue.substring(0, mentionStartIndex);
+  const afterMention = currentValue.substring(messageInput.selectionStart); // Text after cursor
+
+  messageInput.value = `${beforeMention}@${username} ${afterMention}`; // Add space after mention
+  hideMentionSuggestions();
+  messageInput.focus();
+  // Move cursor after the inserted mention + space
+  const cursorPos = beforeMention.length + username.length + 2;
+  messageInput.setSelectionRange(cursorPos, cursorPos);
+}
+
+function handleMentionInput() {
+  const text = messageInput.value;
+  const cursorPos = messageInput.selectionStart;
+  const atIndex = text.lastIndexOf('@', cursorPos - 1);
+
+  if (atIndex !== -1 && (atIndex === 0 || /\s/.test(text[atIndex - 1]))) {
+    // Found '@' preceded by space or start of input
+    mentionQuery = text.substring(atIndex + 1, cursorPos).toLowerCase();
+    mentionStartIndex = atIndex; // Store where the mention started
+
+    // Filter users (case-insensitive) - Use allUserDetails which has profile pics
+    mentionSuggestions = allUserDetails.filter(user =>
+      user.username.toLowerCase().startsWith(mentionQuery)
+    ).slice(0, 10); // Limit suggestions
+
+    if (mentionSuggestions.length > 0) {
+      isMentioning = true;
+      selectedMentionIndex = 0; // Default to first item
+      showMentionSuggestions();
+    } else {
+      hideMentionSuggestions();
+    }
+  } else {
+    hideMentionSuggestions();
+  }
+}
+
+function handleMentionKeyDown(e) {
+  if (!isMentioning) return;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    updateMentionSelection(1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    updateMentionSelection(-1);
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    const selectedUser = mentionSuggestions[selectedMentionIndex];
+    selectMention(selectedUser?.username);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    hideMentionSuggestions();
+  }
+}
+
 
 // --- Event Listeners ---
 loginButton.addEventListener('click', () => {
@@ -708,8 +857,13 @@ function attachToggleListeners() {
   if (loginLink) loginLink.addEventListener('click', (e) => { e.preventDefault(); showAuthView(true); });
 }
 attachToggleListeners();
-// Send button removed
+
+// Message Input Listeners
 messageInput.addEventListener('keypress', (e) => {
+  if (isMentioning && (e.key === 'Enter' || e.key === 'Tab')) {
+    e.preventDefault(); // Prevent default Enter/Tab behavior when mention list is open
+    return;
+  }
   if (e.key === 'Enter' && !e.shiftKey && !messageInput.disabled) {
     e.preventDefault();
     const text = messageInput.value.trim();
@@ -717,6 +871,7 @@ messageInput.addEventListener('keypress', (e) => {
       window.electronAPI.sendMessage(text);
       messageInput.value = '';
       window.electronAPI.stopTyping();
+      hideMentionSuggestions(); // Hide on send
     }
   }
 });
@@ -727,7 +882,8 @@ passwordInput.addEventListener('keypress', (e) => {
   }
 });
 messageInput.addEventListener('input', () => {
-  if (!messageInput.disabled) {
+  handleMentionInput(); // Handle mention suggestions on input
+  if (!messageInput.disabled && !isMentioning) { // Don't send typing if mention list is open? Or maybe do? Let's send it.
     window.electronAPI.startTyping();
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => {
@@ -735,6 +891,13 @@ messageInput.addEventListener('input', () => {
     }, 2500);
   }
 });
+messageInput.addEventListener('keydown', handleMentionKeyDown); // Handle arrow keys, Enter, Tab, Esc for mentions
+messageInput.addEventListener('blur', () => {
+  // Delay hiding suggestions slightly to allow click events on suggestions to register
+  setTimeout(hideMentionSuggestions, 150);
+});
+
+
 userSettingsButton.addEventListener('click', showProfileSettingsModal);
 attachmentButton.addEventListener('click', () => {
   if (!attachmentButton.disabled) {

@@ -326,10 +326,30 @@ body {
   padding: 0 20px;
 }
 /* Reduce top margin for consecutive messages from the same sender */
-.message-group + .message-group[data-sender] {
-  /* This selector needs JS to add data-sender attribute */
-  /* We'll handle this in JS for now, but ideally CSS could do it if structure allowed */
+.message-group.consecutive {
+  margin-top: 2px; /* Small gap for consecutive messages */
 }
+/* Highlight mentioned messages */
+.message-group.mentioned {
+  background-color: rgba(250, 166, 26, 0.05); /* Subtle yellow background */
+  border-left: 2px solid #faa61a; /* Yellow left border */
+  padding-left: 18px; /* Adjust padding to account for border */
+}
+.message-group.mentioned .message-avatar {
+  left: 18px; /* Adjust avatar position */
+}
+.message-group.mentioned .message-group-content {
+  padding-left: 73px; /* Adjust content padding */
+}
+/* Optional: Highlight the specific @mention text */
+.mention-highlight {
+  background-color: hsla(235, 85.6%, 64.7%, 0.3);
+  color: #c8cdff;
+  padding: 0 2px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
 .message-group .message-avatar {
   position: absolute;
   left: 20px;
@@ -408,6 +428,46 @@ body {
   display: block; /* Ensure it takes block space */
 }
 
+/* Mention Suggestions Popup */
+#mention-suggestions {
+  position: absolute;
+  bottom: 65px; /* Position above input area */
+  left: 20px; /* Align with input area padding */
+  right: 20px;
+  max-height: 200px; /* Limit height */
+  overflow-y: auto;
+  background-color: #2f3136; /* Darker background */
+  border: 1px solid #202225;
+  border-radius: 5px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  z-index: 20; /* Above messages, below modals */
+  color: #dcddde;
+}
+.mention-suggestion-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #3a3c43;
+}
+.mention-suggestion-item:last-child {
+  border-bottom: none;
+}
+.mention-suggestion-item:hover,
+.mention-suggestion-item.selected {
+  background-color: #40444b;
+}
+.mention-suggestion-item .user-avatar { /* Reuse avatar style */
+  width: 24px;
+  height: 24px;
+  font-size: 0.8em;
+  margin-right: 8px;
+}
+.mention-suggestion-item .user-name { /* Reuse user name style */
+  font-size: 0.9em;
+}
+
+
 /* Input Area Styles */
 #typing-indicator {
   height: 20px; /* Fixed height */
@@ -427,33 +487,9 @@ body {
   font-weight: 500;
   color: #fff;
 }
-#typing-indicator .dots span {
-  /* Animated dots */
-  display: inline-block;
-  animation: typing-dots 1.4s infinite;
-  opacity: 0;
-}
-#typing-indicator .dots span:nth-child(1) {
-  animation-delay: 0s;
-}
-#typing-indicator .dots span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-#typing-indicator .dots span:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes typing-dots {
-  0% {
-    opacity: 0;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
+/* Removed dot animation for simplicity */
+/* #typing-indicator .dots span { ... } */
+/* @keyframes typing-dots { ... } */
 
 #input-area {
   display: flex;
@@ -462,7 +498,7 @@ body {
   flex-shrink: 0;
   border-top: none;
   /* margin-top: 0; */ /* Let typing indicator handle space */
-  align-items: flex-end; /* Align items to bottom */
+  align-items: center; /* Align items vertically */
   gap: 10px; /* Add gap between button and input */
 }
 #attachment-button {
