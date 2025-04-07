@@ -387,22 +387,39 @@ async function handleChatMessage(ws, text) {
   const clientData = clients.get(ws);
   if (!clientData || !clientData.username || !clientData.currentChannel || !text) return;
 
-  const message = {
-    channel: clientData.currentChannel,
-    sender: clientData.username,
-    text: text,
-    timestamp: Date.now(),
-    edited: false,
-    attachment: null, // Ensure attachment is null for text messages
-  };
+  const senderUsername = clientData.username;
+  const channel = clientData.currentChannel;
 
   try {
-    const result = await messagesCollection.insertOne(message);
+    // Fetch sender's Riot mastery info
+    const senderUser = await usersCollection.findOne({ username: senderUsername });
+    const senderRiotMasteryChampionName = senderUser?.riotHighestMasteryChampionId
+      ? getChampionNameById(senderUser.riotHighestMasteryChampionId)
+      : null;
+
+    const message = {
+      channel: channel,
+      sender: senderUsername,
+      text: text,
+      timestamp: Date.now(),
+      edited: false,
+      attachment: null, // Ensure attachment is null for text messages
+      // Add mastery name if available
+      senderRiotMasteryChampionName: senderRiotMasteryChampionName,
+    };
+
+    const result = await messagesCollection.insertOne({
+        ...message,
+        // Don't store the derived champion name in the DB, only broadcast it
+        senderRiotMasteryChampionName: undefined
+    });
     message._id = result.insertedId; // Add the ID for broadcasting
-    broadcastMessage(clientData.currentChannel, message);
-    console.log(`[Chat] Message from ${clientData.username} in #${clientData.currentChannel}: ${text}`);
+
+    // Broadcast the message *with* the champion name included
+    broadcastMessage(channel, message);
+    console.log(`[Chat] Message from ${senderUsername} in #${channel}: ${text}`);
   } catch (err) {
-    console.error('[Chat] Error saving message:', err);
+    console.error('[Chat] Error saving/broadcasting message:', err);
     sendError(ws, 'Failed to save message.');
   }
 }
@@ -426,6 +443,12 @@ async function handleFileUpload(ws, fileName, fileType, fileBuffer) {
         const fileUrl = `https://${S3_BUCKET_NAME}.s3.${S3_REGION}.amazonaws.com/${uniqueFileName}`;
         console.log(`[S3] Upload successful: ${fileUrl}`);
 
+        // Fetch sender's Riot mastery info
+        const senderUser = await usersCollection.findOne({ username: clientData.username });
+        const senderRiotMasteryChampionName = senderUser?.riotHighestMasteryChampionId
+          ? getChampionNameById(senderUser.riotHighestMasteryChampionId)
+          : null;
+
         // Save message to DB with attachment info
         const message = {
             channel: clientData.currentChannel,
@@ -439,14 +462,22 @@ async function handleFileUpload(ws, fileName, fileType, fileBuffer) {
                 type: fileType,
                 size: fileBuffer.length,
             },
+            // Add mastery name if available
+            senderRiotMasteryChampionName: senderRiotMasteryChampionName,
         };
-        const result = await messagesCollection.insertOne(message);
-        message._id = result.insertedId;
+        const result = await messagesCollection.insertOne({
+            ...message,
+            // Don't store the derived champion name in the DB, only broadcast it
+            senderRiotMasteryChampionName: undefined
+        });
+        message._id = result.insertedId; // Add ID for broadcasting
+
+        // Broadcast the message *with* the champion name included
         broadcastMessage(clientData.currentChannel, message);
         console.log(`[Chat] File attachment from ${clientData.username} in #${clientData.currentChannel}: ${fileName}`);
 
     } catch (err) {
-        console.error('[S3] Error uploading file:', err);
+        console.error('[S3] Error uploading file or broadcasting:', err);
         sendError(ws, `Failed to upload file: ${err.message}`);
     }
 }
@@ -864,8 +895,11 @@ function broadcast(message) {
   });
 }
 
-function broadcastMessage(channel, message) {
-  const messageString = JSON.stringify({ type: 'chat', ...message });
+// Modified broadcastMessage to accept the full message object including potential mastery name
+function broadcastMessage(channel, messageObject) {
+  // Ensure the message object includes the type
+  const fullMessage = { type: 'chat', ...messageObject };
+  const messageString = JSON.stringify(fullMessage);
   clients.forEach((clientData, clientWs) => {
     if (clientWs.readyState === WebSocket.OPEN && clientData.currentChannel === channel) {
       clientWs.send(messageString);
@@ -879,9 +913,26 @@ async function sendChannelHistory(ws, channelName) {
       .sort({ timestamp: 1 }) // Sort by oldest first
       .limit(100) // Limit history length
       .toArray();
-    sendResponse(ws, 'history', { channel: channelName, payload: history });
+
+    // Efficiently fetch Riot mastery names for all unique senders in the history
+    const senderUsernames = [...new Set(history.map(msg => msg.sender))];
+    const senderUsers = await usersCollection.find({ username: { $in: senderUsernames } }).toArray();
+    const masteryNameMap = senderUsers.reduce((map, user) => {
+        if (user.riotHighestMasteryChampionId) {
+            map[user.username] = getChampionNameById(user.riotHighestMasteryChampionId);
+        }
+        return map;
+    }, {});
+
+    // Add the mastery name to each message object before sending
+    const historyWithMastery = history.map(msg => ({
+        ...msg,
+        senderRiotMasteryChampionName: masteryNameMap[msg.sender] || null,
+    }));
+
+    sendResponse(ws, 'history', { channel: channelName, payload: historyWithMastery });
   } catch (err) {
-    console.error(`[History] Error fetching history for #${channelName}:`, err);
+    console.error(`[History] Error fetching/processing history for #${channelName}:`, err);
     sendError(ws, `Failed to load history for #${channelName}.`);
   }
 }

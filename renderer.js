@@ -648,21 +648,22 @@ function addMessage(messageData, isHistory = false) { // Added isHistory flag
     senderSpan.textContent = sender;
     senderSpan.dataset.username = sender;
     senderSpan.addEventListener('click', () => window.electronAPI.getUserProfile(sender));
+    headerDiv.appendChild(senderSpan); // Append sender span first
 
-    // Add Riot Mastery Tag next to sender name
-    if (senderDetails?.riotHighestMasteryChampionName) {
-        const masteryTag = document.createElement('span');
-        masteryTag.classList.add('riot-mastery-tag'); // Add class for styling
-        masteryTag.textContent = `(${senderDetails.riotHighestMasteryChampionName} Main)`;
-        masteryTag.title = `Highest Mastery: ${senderDetails.riotHighestMasteryChampionName}`;
-        senderSpan.appendChild(masteryTag); // Append tag to sender span
+    // Add Riot Mastery Plaque if champion name is provided in the message data
+    // Uses messageData.senderRiotMasteryChampionName sent from server
+    if (messageData.senderRiotMasteryChampionName) {
+        const plaqueSpan = document.createElement('span');
+        plaqueSpan.classList.add('plaque', 'riot-mastery-plaque'); // Add base and specific class
+        plaqueSpan.textContent = `${messageData.senderRiotMasteryChampionName} Main`;
+        plaqueSpan.title = `Highest Mastery: ${messageData.senderRiotMasteryChampionName}`;
+        headerDiv.appendChild(plaqueSpan); // Append plaque after sender span
     }
 
     const timestampSpan = document.createElement('span');
     timestampSpan.classList.add('timestamp');
     timestampSpan.textContent = messageData.timestamp ? new Date(messageData.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
-    headerDiv.appendChild(senderSpan);
-    headerDiv.appendChild(timestampSpan);
+    headerDiv.appendChild(timestampSpan); // Append timestamp last
     contentDiv.appendChild(headerDiv);
     messageGroup.appendChild(contentDiv);
     messagesDiv.appendChild(messageGroup);

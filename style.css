@@ -490,6 +490,27 @@ body {
   font-style: italic;
   cursor: default; /* Not clickable */
 }
+
+/* General Plaque Style */
+.plaque {
+  display: inline-block;
+  padding: 1px 5px;
+  margin-left: 6px; /* Space from username */
+  border-radius: 4px;
+  font-size: 0.7em; /* Smaller than username */
+  font-weight: 600;
+  line-height: 1.2;
+  vertical-align: baseline; /* Align with username text */
+  cursor: default;
+}
+
+/* Specific Riot Mastery Plaque Style */
+.riot-mastery-plaque {
+  background-color: #1e88e5; /* Example blue color */
+  color: #fff;
+  border: 1px solid #1565c0; /* Slightly darker border */
+}
+
 .message-text {
   line-height: 1.375;
   color: #dcddde;
