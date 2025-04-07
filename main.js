@@ -12,7 +12,8 @@ const { autoUpdater } = pkg_updater;
 const require = createRequire(import.meta.url);
 const pkg = require('./package.json');
 const appVersion = pkg.version;
-console.log('[Main Init] Imported autoUpdater:', typeof autoUpdater); // Log type
+console.log(`[Main Init] App Version: ${appVersion}`);
+console.log('[Main Init] Imported autoUpdater:', typeof autoUpdater, autoUpdater ? Object.keys(autoUpdater) : 'N/A'); // Log type and keys if object
 
 // --- Configuration ---
 const SERVER_URL = 'wss://gcchat.onrender.com';
@@ -244,9 +245,14 @@ function createWindow() {
   mainWindow.webContents.once('did-finish-load', () => {
     connectToServer();
     // Check for updates after the window is ready and loaded
-    console.log('[Main] did-finish-load: Checking for updates...');
-    if (autoUpdater) {
-      autoUpdater.checkForUpdatesAndNotify();
+    console.log('[Main] did-finish-load: Triggering update check.');
+    if (autoUpdater && typeof autoUpdater.checkForUpdatesAndNotify === 'function') {
+      try {
+        autoUpdater.checkForUpdatesAndNotify();
+        console.log('[Main] did-finish-load: checkForUpdatesAndNotify() called successfully.');
+      } catch (error) {
+        console.error('[Main] did-finish-load: Error calling checkForUpdatesAndNotify():', error);
+      }
     } else {
       console.error('[Main] did-finish-load: autoUpdater object is not valid!');
     }
@@ -254,11 +260,12 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  console.log('[Main] App is ready. Setting up AutoUpdater listeners...'); // Log readiness
-  // Set up auto-updater event listeners *before* creating the window
-  autoUpdater.on('checking-for-update', () => {
-    console.log('[AutoUpdater] Checking for update...');
-  });
+  console.log('[Main] App is ready. Setting up AutoUpdater listeners...');
+  try {
+    // Set up auto-updater event listeners *before* creating the window
+    autoUpdater.on('checking-for-update', () => {
+      console.log('[AutoUpdater] Checking for update...');
+    });
   autoUpdater.on('update-available', (info) => {
     console.log('[AutoUpdater] Update available:', info);
   });
@@ -279,6 +286,10 @@ app.whenReady().then(() => {
     // The 'checkForUpdatesAndNotify' automatically prompts the user to restart.
     // If we wanted manual control, we'd call autoUpdater.quitAndInstall() here after user confirmation.
   });
+    console.log('[Main] AutoUpdater listeners attached successfully.');
+  } catch (error) {
+    console.error('[Main] Error attaching AutoUpdater listeners:', error);
+  }
 
   // Now create the main window
   createWindow();
