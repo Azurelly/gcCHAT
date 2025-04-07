@@ -1,3 +1,4 @@
+console.log('[Main Init] main.js script started execution.'); // ADDED VERY TOP LEVEL LOG
 import { app, BrowserWindow, ipcMain, Menu, Notification } from 'electron'; // Added Notification
 import path from 'path';
 import { fileURLToPath } from 'url';
