@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import os from 'os';
 import { WebSocket } from 'ws';
 import Store from 'electron-store';
+import { autoUpdater } from 'electron-updater';
 
 // --- Configuration ---
 const SERVER_URL = 'wss://gcchat.onrender.com';
@@ -231,6 +232,8 @@ function createWindow() {
   // Connect after the window content has finished loading
   mainWindow.webContents.once('did-finish-load', () => {
     connectToServer();
+    // Check for updates after the window is ready and loaded
+    autoUpdater.checkForUpdatesAndNotify();
   });
 }
 
