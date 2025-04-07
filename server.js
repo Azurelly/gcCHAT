@@ -79,19 +79,21 @@ async function ensureIndexes() {
 }
 
 // --- Riot API Helpers ---
-async function getRiotAccountByRiotId(gameName, tagLine) {
-  const regionalRoute = 'americas'; // Default or determine based on common taglines? For now, hardcode Americas. Needs improvement.
-  // A better approach would be to ask the user for their region during linking.
-  // We need the REGIONAL route for ACCOUNT-V1
+// Modified to accept regionalRoute
+async function getRiotAccountByRiotId(gameName, tagLine, regionalRoute) {
+  if (!regionalRoute) {
+      throw new Error('Regional route is required for Riot Account API.');
+  }
   const url = `https://${regionalRoute}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`;
   try {
     console.log(`[Riot API] Fetching account for ${gameName}#${tagLine} via ${regionalRoute}`);
     const response = await axios.get(url, {
       headers: { 'X-Riot-Token': RIOT_API_KEY },
     });
+    console.log(`[Riot API] Account data received for ${gameName}#${tagLine}`);
     return response.data; // { puuid, gameName, tagLine }
   } catch (error) {
-    console.error(`[Riot API] Error fetching account for ${gameName}#${tagLine}:`, error.response?.status, error.response?.data || error.message);
+    console.error(`[Riot API] Error fetching account for ${gameName}#${tagLine} via ${regionalRoute}:`, error.response?.status, error.response?.data || error.message);
     if (error.response?.status === 404) {
       throw new Error('Riot ID not found.');
     } else if (error.response?.status === 403) {
@@ -114,8 +116,10 @@ async function getHighestChampionMastery(puuid, platformId) {
       headers: { 'X-Riot-Token': RIOT_API_KEY },
     });
     if (response.data && response.data.length > 0) {
+      console.log(`[Riot API] Mastery data received for PUUID ${puuid}`);
       return response.data[0]; // { championId, championLevel, championPoints, ... }
     }
+    console.log(`[Riot API] No mastery data found for PUUID ${puuid}`);
     return null; // No mastery data found
   } catch (error) {
     console.error(`[Riot API] Error fetching mastery for PUUID ${puuid} on ${platformId}:`, error.response?.status, error.response?.data || error.message);
@@ -126,6 +130,7 @@ async function getHighestChampionMastery(puuid, platformId) {
     if (error.response?.status !== 404) {
         throw new Error('Failed to fetch Riot champion mastery data.');
     }
+    console.log(`[Riot API] Mastery fetch returned ${error.response?.status}, treating as no mastery found.`);
     return null;
   }
 }
@@ -746,32 +751,47 @@ async function handleTogglePartyMode(ws, targetUsername) {
 }
 
 async function handleLinkRiotAccount(ws, gameName, tagLine, platformId) {
+    console.log(`[Profile] handleLinkRiotAccount started for user: ${clients.get(ws)?.username}`);
     const clientData = clients.get(ws);
+
+    // Initial Validations (Send specific response type)
     if (!clientData || !clientData.username) {
-        // Send error response if not logged in
-        return sendResponse(ws, 'link-riot-account-response', { success: false, error: 'Not logged in.' });
+        console.log('[Profile] User not logged in, sending error response.');
+        sendResponse(ws, 'link-riot-account-response', { success: false, error: 'Not logged in.' });
+        return; // Exit function
     }
     if (!gameName || !tagLine || !platformId) {
-        return sendResponse(ws, 'link-riot-account-response', { success: false, error: 'Game Name, Tag Line, and Region are required.' });
+        console.log('[Profile] Missing input fields, sending error response.');
+        sendResponse(ws, 'link-riot-account-response', { success: false, error: 'Game Name, Tag Line, and Region are required.' });
+        return; // Exit function
     }
 
     const lowerPlatformId = platformId.toLowerCase();
-    if (!RIOT_REGION_MAP[lowerPlatformId]) {
-        return sendResponse(ws, 'link-riot-account-response', { success: false, error: 'Invalid region selected.' });
+    const regionalRoute = RIOT_REGION_MAP[lowerPlatformId]; // Determine regional route from platform ID
+
+    if (!regionalRoute) { // Check if the lookup was successful
+        console.log(`[Profile] Invalid region/platformId: ${platformId}, sending error response.`);
+        sendResponse(ws, 'link-riot-account-response', { success: false, error: 'Invalid region selected.' });
+        return; // Exit function
     }
 
     try {
-        // 1. Get PUUID from Riot ID
-        const accountData = await getRiotAccountByRiotId(gameName, tagLine);
+        console.log(`[Profile] Attempting to fetch Riot account for ${gameName}#${tagLine} using route ${regionalRoute}`);
+        // 1. Get PUUID from Riot ID using the correct regional route
+        const accountData = await getRiotAccountByRiotId(gameName, tagLine, regionalRoute);
         const puuid = accountData.puuid;
         if (!puuid) throw new Error('Could not retrieve PUUID.');
+        console.log(`[Profile] PUUID found: ${puuid}`);
 
         // 2. Get Highest Mastery Champion
+        console.log(`[Profile] Attempting to fetch mastery for ${puuid} on ${lowerPlatformId}`);
         const masteryData = await getHighestChampionMastery(puuid, lowerPlatformId);
         const highestMasteryChampionId = masteryData ? masteryData.championId : null;
         const highestMasteryPoints = masteryData ? masteryData.championPoints : null;
+        console.log(`[Profile] Mastery data: Champion ID ${highestMasteryChampionId}, Points ${highestMasteryPoints}`);
 
         // 3. Update User in DB
+        console.log(`[Profile] Attempting to update DB for user ${clientData.username}`);
         const updateResult = await usersCollection.updateOne(
             { username: clientData.username },
             {
@@ -786,24 +806,10 @@ async function handleLinkRiotAccount(ws, gameName, tagLine, platformId) {
             }
         );
 
-        if (updateResult.modifiedCount === 1) {
-            console.log(`[Profile] User ${clientData.username} linked Riot account: ${accountData.gameName}#${accountData.tagLine} (${lowerPlatformId})`);
-            // Send success response back to the linking client
+        if (updateResult.modifiedCount >= 0) { // Treat 0 modified (already linked/same data) as success
+            console.log(`[Profile] DB update successful (Modified: ${updateResult.modifiedCount}) for user ${clientData.username}. Sending success response.`);
             sendResponse(ws, 'link-riot-account-response', {
                 success: true,
-                profile: { // Send back updated profile snippet
-                    riotGameName: accountData.gameName,
-                    riotTagLine: accountData.tagLine,
-                    riotPlatformId: lowerPlatformId,
-                    riotHighestMasteryChampionName: highestMasteryChampionId ? getChampionNameById(highestMasteryChampionId) : null,
-                    riotHighestMasteryPoints: highestMasteryPoints,
-                }
-            });
-        } else {
-            // This case might happen if the data was already the same, treat as success?
-             console.log(`[Profile] User ${clientData.username} attempted to link Riot account, but data was unchanged.`);
-             sendResponse(ws, 'link-riot-account-response', {
-                success: true, // Still success, just no DB change
                 profile: {
                     riotGameName: accountData.gameName,
                     riotTagLine: accountData.tagLine,
@@ -812,11 +818,13 @@ async function handleLinkRiotAccount(ws, gameName, tagLine, platformId) {
                     riotHighestMasteryPoints: highestMasteryPoints,
                 }
             });
-            // throw new Error('Failed to update user document in database.');
+        } else {
+             console.error(`[Profile] DB update failed for user ${clientData.username}. Result:`, updateResult);
+             throw new Error('Failed to update user document in database.');
         }
 
     } catch (error) {
-        console.error(`[Profile] Error linking Riot account for ${clientData.username}:`, error.message);
+        console.error(`[Profile] Error in handleLinkRiotAccount for ${clientData.username}:`, error.message);
         // Send specific error response back to the client
         sendResponse(ws, 'link-riot-account-response', { success: false, error: `Failed to link Riot account: ${error.message}` });
     }
