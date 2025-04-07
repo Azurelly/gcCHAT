@@ -75,7 +75,7 @@ const saveProfileSettingsButton = document.getElementById(
 const settingsAvatarPreview = document.getElementById('settings-avatar-preview');
 const profilePictureInput = document.getElementById('profile-picture-input');
 const attachmentButton = document.getElementById('attachment-button');
-const attachmentInput = document.getElementById('attachment-input');
+const attachmentInput = document.getElementById('attachment-input'); // Hidden file input
 const newMessagesBar = document.getElementById('new-messages-bar');
 const mentionSuggestionsDiv = document.getElementById('mention-suggestions'); // Added
 const appVersionSpan = document.getElementById('app-version'); // Added
@@ -1052,13 +1052,15 @@ messageInput.addEventListener('blur', () => {
 
 
 userSettingsButton.addEventListener('click', showProfileSettingsModal);
+
+// MODIFIED: Attachment button now shows context menu
 attachmentButton.addEventListener('click', () => {
   if (!attachmentButton.disabled) {
-    attachmentInput.click(); // Trigger hidden file input
+    window.electronAPI.showAttachmentMenu(); // Call main process to show menu
   }
 });
 
-// Listener for the hidden file input
+// Listener for the hidden file input (remains the same)
 attachmentInput.addEventListener('change', (event) => {
   const files = event.target.files;
   if (files.length > 0) {
@@ -1127,6 +1129,23 @@ window.electronAPI.onLogMessage((log) => {
   // Use the appropriate console level (log, warn, error)
   const level = log.level || 'log';
   console[level]('[Main Process]', ...log.args);
+});
+
+// Listen for main process telling us to trigger the file input
+window.electronAPI.onTriggerFileUpload(() => {
+  console.log('[Renderer] Received trigger-file-upload from main.');
+  attachmentInput.click(); // Click the hidden input
+});
+
+// Listen for main process telling us to prompt for a city for weather
+window.electronAPI.onPromptSendWeather(() => {
+  console.log('[Renderer] Received prompt-send-weather from main.');
+  const cityName = prompt('Enter city name to get weather for:');
+  if (cityName && cityName.trim().length > 0) {
+    window.electronAPI.sendWeatherMessage(cityName.trim());
+  } else if (cityName !== null) { // Only show error if user didn't press Cancel
+    alert('City name cannot be empty.');
+  }
 });
 
 window.electronAPI.onSignupResponse((response) => {

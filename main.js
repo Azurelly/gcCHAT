@@ -1,11 +1,12 @@
 console.log('[Main Init] main.js script started execution.'); // ADDED VERY TOP LEVEL LOG
-import { app, BrowserWindow, ipcMain, Menu, Notification } from 'electron'; // Added Notification
+import { app, BrowserWindow, ipcMain, Menu, MenuItem, Notification } from 'electron'; // Added MenuItem, Notification
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module'; // Import createRequire
 import os from 'os';
 import { WebSocket } from 'ws';
 import Store from 'electron-store';
+import axios from 'axios'; // Import axios
 // Correct import for CommonJS module 'electron-updater' in an ES Module context
 import pkg_updater from 'electron-updater'; // Rename to avoid conflict
 const { autoUpdater } = pkg_updater;
@@ -19,6 +20,7 @@ console.log('[Main Init] Imported autoUpdater:', typeof autoUpdater, autoUpdater
 
 // --- Configuration ---
 const SERVER_URL = 'wss://gcchat.onrender.com';
+const WEATHER_API_KEY = '0bb4b73ce31aaabca8d373d45d924a83'; // User-provided key
 
 // --- State ---
 let mainWindow = null;
@@ -532,7 +534,98 @@ ipcMain.on('show-user-context-menu', (_event, { username }) => {
   menu.popup({ window: mainWindow });
 });
 
-// New: Profile Settings IPC Handlers
+// Attachment Menu IPC Handler
+ipcMain.on('show-attachment-menu', (_event) => {
+  const template = [
+    {
+      label: 'Upload File...',
+      click: () => {
+        // Tell the renderer to trigger the hidden file input
+        mainWindow?.webContents.send('trigger-file-upload');
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Send Weather...',
+      click: () => {
+        // Tell the renderer to prompt the user for a city name
+        mainWindow?.webContents.send('prompt-send-weather');
+      },
+    },
+  ];
+  const menu = Menu.buildFromTemplate(template);
+  // Popup the menu. Position can be adjusted if needed, but default works.
+  menu.popup({ window: mainWindow });
+});
+
+// --- Weather Functionality ---
+async function getWeatherByCity(cityName) {
+  if (!WEATHER_API_KEY) {
+    console.error('[Weather] API Key not configured.');
+    return { error: 'Weather API key not configured on the client.' };
+  }
+  const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(cityName)}&appid=${WEATHER_API_KEY}&units=metric`; // Use metric units
+  try {
+    const response = await axios.get(url);
+    const data = response.data;
+    if (data && data.main && data.weather && data.weather.length > 0) {
+      return {
+        city: data.name,
+        temp: data.main.temp,
+        feels_like: data.main.feels_like,
+        description: data.weather[0].description,
+        icon: data.weather[0].icon, // Icon code
+        humidity: data.main.humidity,
+        wind_speed: data.wind.speed,
+      };
+    } else {
+      console.error('[Weather] Invalid API response structure:', data);
+      return { error: 'Invalid weather data received.' };
+    }
+  } catch (error) {
+    console.error('[Weather] Error fetching weather:', error.response?.data?.message || error.message);
+    if (error.response && error.response.status === 404) {
+      return { error: `City "${cityName}" not found.` };
+    } else if (error.response && error.response.status === 401) {
+      return { error: 'Invalid Weather API Key.' };
+    }
+    return { error: 'Could not fetch weather data.' };
+  }
+}
+
+// IPC handler to fetch weather and send message
+ipcMain.on('send-weather-message', async (_event, cityName) => {
+  if (!loggedInUsername || !currentChannel) {
+    mainWindow?.webContents.send('send-error', 'Must be logged in to send weather.');
+    return;
+  }
+  if (!cityName || typeof cityName !== 'string' || cityName.trim().length === 0) {
+     mainWindow?.webContents.send('send-error', 'City name cannot be empty.');
+     return;
+  }
+
+  const trimmedCityName = cityName.trim();
+  console.log(`[Weather] Fetching weather for city: ${trimmedCityName}`);
+  const weatherData = await getWeatherByCity(trimmedCityName);
+
+  if (weatherData.error) {
+    console.error(`[Weather] Failed to get weather for ${trimmedCityName}:`, weatherData.error);
+    // Optionally send an error message back to the renderer or just log it
+    mainWindow?.webContents.send('send-error', `Weather Error: ${weatherData.error}`);
+    return;
+  }
+
+  // Format the weather data into a nice message string
+  // Example: "Weather in London: 15°C (feels like 14°C), clear sky. Humidity: 70%, Wind: 3 m/s."
+  // We can add the icon later if desired.
+  const weatherMessage = `Weather in ${weatherData.city}: ${weatherData.temp.toFixed(1)}°C (feels like ${weatherData.feels_like.toFixed(1)}°C), ${weatherData.description}. Humidity: ${weatherData.humidity}%, Wind: ${weatherData.wind_speed.toFixed(1)} m/s.`;
+
+  console.log(`[Weather] Sending weather message: ${weatherMessage}`);
+  sendToServer({ type: 'chat', text: weatherMessage }); // Send as a regular chat message
+});
+
+
+// Profile Settings IPC Handlers
 ipcMain.on('request-own-profile', (_event) => {
   if (loggedInUsername) {
     sendToServer({ type: 'get-own-profile' }); // Request own profile data

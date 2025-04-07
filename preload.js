@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('delete-message', { messageId }),
   sendFileAttachment: (fileData) => // New channel for sending files
     ipcRenderer.send('send-file-attachment', fileData),
+  onTriggerFileUpload: (callback) => // Listener for main process telling renderer to open file dialog
+    ipcRenderer.on('trigger-file-upload', (_event) => callback()),
   switchChannel: (channelName) =>
     ipcRenderer.send('switch-channel', channelName),
   createChannel: (channelName) =>
@@ -67,6 +69,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('show-message-context-menu', { messageId, isOwnMessage }),
   showUserContextMenu: (username) =>
     ipcRenderer.send('show-user-context-menu', { username }), // Context menu for user list items
+  showAttachmentMenu: () => ipcRenderer.send('show-attachment-menu'), // Trigger attachment context menu
+  // Weather
+  sendWeatherMessage: (cityName) => ipcRenderer.send('send-weather-message', cityName),
+  onPromptSendWeather: (callback) => // Listener for main telling renderer to ask for city
+    ipcRenderer.on('prompt-send-weather', (_event) => callback()),
   onPromptCreateChannel: (callback) =>
     ipcRenderer.on('prompt-create-channel', (_event) => callback()),
   onConfirmDeleteChannel: (callback) =>
@@ -118,7 +125,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('send-error');
     ipcRenderer.removeAllListeners('error');
     ipcRenderer.removeAllListeners('log-message'); // Add cleanup for log listener
-    // No listener cleanup needed for 'show-notification' or 'update-channel-state' (send)
+    ipcRenderer.removeAllListeners('trigger-file-upload'); // Add cleanup for attachment trigger
+    ipcRenderer.removeAllListeners('prompt-send-weather'); // Add cleanup for weather prompt
+    // No listener cleanup needed for 'show-notification', 'update-channel-state', 'showAttachmentMenu', 'sendWeatherMessage' (send)
     // No listener cleanup needed for 'get-channel-states' (invoke)
     // Add cleanup for any potential future listeners related to attachments
     // ipcRenderer.removeAllListeners('file-upload-progress');

@@ -23,10 +23,11 @@
     *   Manages native context menus (sidebar, channel, message, user).
     *   Relays messages between renderer and WebSocket server.
     *   Logs app version to console and sends it to renderer via `status-update`.
-    *   Listens for IPC events: `signup-request`, `login-request`, `send-message`, `edit-message`, `delete-message`, `switch-channel`, `create-channel`, `delete-channel`, `get-user-profile`, `start-typing`, `stop-typing`, `toggle-user-party-mode`, `request-own-profile`, `save-about-me`, `save-profile-picture`, `send-file-attachment`, `request-status`, context menu triggers, `show-notification`.
+    *   Listens for IPC events: `signup-request`, `login-request`, `send-message`, `edit-message`, `delete-message`, `switch-channel`, `create-channel`, `delete-channel`, `get-user-profile`, `start-typing`, `stop-typing`, `toggle-user-party-mode`, `request-own-profile`, `save-about-me`, `save-profile-picture`, `send-file-attachment`, `request-status`, context menu triggers (`show-sidebar-context-menu`, `show-channel-context-menu`, `show-message-context-menu`, `show-user-context-menu`, `show-attachment-menu`), `show-notification`, `send-weather-message`.
     *   Relays server messages to renderer: `history`, `chat`, `login-response`, `signup-response`, `channel-list`, `user-profile-response`, `own-profile-response`, `profile-updated`, `message-edited`, `message-deleted`, `user-list-update`, `party-mode-update`, `typing-update`, `error`.
     *   Shows desktop notifications via Electron's `Notification` API for mentions when the window is not focused.
     *   Includes basic auto-update check on startup using `electron-updater`. Added console logging for updater events, relayed to renderer via IPC (`log-message`) for visibility in packaged app DevTools.
+    *   **Weather:** Fetches weather data from OpenWeatherMap API using `axios` (requires `WEATHER_API_KEY` constant) via `getWeatherByCity` function. Formats and sends weather data as a chat message when triggered by `send-weather-message` IPC event.
 *   **Renderer Process (`index.html`, `renderer.js`, `style.css`):**
     *   Displays the UI (Login/Signup view, Chat view).
     *   Chat view includes: Channel sidebar, main message area, user list sidebar, modals (profile view, profile settings, create/delete channel).
@@ -44,8 +45,8 @@
     *   Ensures channels always load scrolled to the bottom when switched to.
 *   **Preload Script (`preload.js`):**
     *   Securely exposes specific IPC channels using `contextBridge`.
-    *   Exposed methods: `sendSignup`, `sendLogin`, `sendMessage`, `editMessage`, `deleteMessage`, `sendFileAttachment`, `switchChannel`, `createChannel`, `deleteChannel`, `getUserProfile`, `startTyping`, `stopTyping`, `toggleUserPartyMode`, `requestOwnProfile`, `saveAboutMe`, `saveProfilePicture`, `requestStatus`, `showNotification`, context menu triggers.
-    *   Exposed listeners: `onSignupResponse`, `onLoginResponse`, `onMessageReceived`, `onMessageEdited`, `onMessageDeleted`, `onLoadHistory`, `onChannelList`, `onUserProfileResponse`, `onOwnProfileResponse`, `onProfileUpdated`, `onUserListUpdate`, `onPartyModeUpdate`, `onTypingUpdate`, `onStatusUpdate`, `onSendError`, `onError`, modal triggers.
+    *   Exposed methods: `sendSignup`, `sendLogin`, `sendMessage`, `editMessage`, `deleteMessage`, `sendFileAttachment`, `switchChannel`, `createChannel`, `deleteChannel`, `getUserProfile`, `startTyping`, `stopTyping`, `toggleUserPartyMode`, `requestOwnProfile`, `saveAboutMe`, `saveProfilePicture`, `requestStatus`, `showNotification`, context menu triggers (`showChannelContextMenu`, `showSidebarContextMenu`, `showMessageContextMenu`, `showUserContextMenu`, `showAttachmentMenu`), `sendWeatherMessage`.
+    *   Exposed listeners: `onSignupResponse`, `onLoginResponse`, `onMessageReceived`, `onMessageEdited`, `onMessageDeleted`, `onLoadHistory`, `onChannelList`, `onUserProfileResponse`, `onOwnProfileResponse`, `onProfileUpdated`, `onUserListUpdate`, `onPartyModeUpdate`, `onTypingUpdate`, `onStatusUpdate`, `onSendError`, `onError`, modal triggers (`onPromptCreateChannel`, `onConfirmDeleteChannel`, `onEditMessagePrompt`), `onTriggerFileUpload`, `onPromptSendWeather`.
     *   Includes `cleanupListeners` function.
     *   Exposes `getChannelStates` (invoke) and `updateChannelState` (send) for persistent state management.
     *   Exposes `onLogMessage` listener to receive logs from main process.
@@ -53,7 +54,7 @@
     *   `eslint.config.js`: ESLint flat config (v9+), extends recommended, integrates Prettier, allows `console.log`.
     *   `.prettierrc.json`: Prettier config (single quotes, semi-colons, tab width 2).
     *   `.gitignore`: Standard Node/Electron ignores, plus `dist/` and `uploads/`.
-    *   `package.json`: Defines scripts (`start`, `lint`, `format`, `build:electron`), dependencies (`@aws-sdk/client-s3`, `bcrypt`, `electron-store`, `electron-updater`, `mongodb`, `uuid`, `ws`), devDependencies (`@electron/rebuild`, `electron`, `electron-builder`, `@eslint/js`, `eslint`, `eslint-config-prettier`, `eslint-plugin-prettier`, `prettier`). Includes `build` section for `electron-builder` (NSIS target, GitHub publish provider).
+    *   `package.json`: Defines scripts (`start`, `lint`, `format`, `build:electron`), dependencies (`@aws-sdk/client-s3`, `axios`, `bcrypt`, `electron-store`, `electron-updater`, `mongodb`, `uuid`, `ws`), devDependencies (`@electron/rebuild`, `electron`, `electron-builder`, `@eslint/js`, `eslint`, `eslint-config-prettier`, `eslint-plugin-prettier`, `prettier`). Includes `build` section for `electron-builder` (NSIS target, GitHub publish provider).
 
 ### Server (Node.js)
 
@@ -89,12 +90,11 @@
 *   **User List:** Right sidebar shows Online/Offline users with avatars.
 *   **Typing Indicator:** Client sends events, server manages state, client displays indicator (shows own typing).
 *   **Party Mode:** Admin context menu toggles state via server broadcast.
-*   **UI/UX:** Discord-inspired dark theme, message grouping, styled scrollbars, fixed various layout issues (typing indicator position, message spacing, avatar centering, attachment button alignment).
+*   **UI/UX:** Discord-inspired dark theme, message grouping, styled scrollbars, fixed various layout issues (typing indicator position, message spacing, avatar centering, attachment button alignment, **channel name alignment in sidebar**).
 *   **Code Quality:** ESLint/Prettier configured and applied.
-*   **File Attachments (S3):**
-    *   Client: '+' button opens file dialog, reads file (<=10MB), sends via IPC/WebSocket.
-    *   Server: Receives file, uploads to configured AWS S3 bucket (`gcchat-uploads-unique` in `us-west-1` by default, uses env vars) with `public-read` ACL, saves message with S3 URL.
-    *   Client: Displays image attachments using `<img>` tag with S3 URL, other types as links. CSP updated to allow S3 images.
+*   **Attachments:**
+    *   **File Uploads (S3):** '+' button now shows a context menu. Selecting "Upload File..." triggers a hidden file input. Reads file (<=10MB), sends via IPC/WebSocket. Server uploads to S3, saves URL. Client displays images/links.
+    *   **Weather:** Selecting "Send Weather..." from attachment menu prompts user for city name. Main process fetches data from OpenWeatherMap API (using `axios` and API key), formats it, and sends as a chat message.
 *   **Mentions:**
     *   Client: `@` triggers suggestion popup, filters users, allows keyboard navigation (Arrows/Enter/Tab/Esc) and selection.
     *   Client: Messages mentioning the user (`@localUsername`) have the specific message text highlighted with a subtle background/border.
@@ -103,18 +103,17 @@
 *   **Scrolling:** Auto-scrolls on send or when receiving messages while near bottom. "New Messages" bar appears when scrolled up. Channels now always load scrolled to the bottom when switched to.
 *   **Channel Notifications:** Refined client-side tracking and display of channel notifications with distinct styles and positions for mentions (red badge next to name, bold white text) vs. regular new messages (grey "X new" indicator on far right, light grey text). Status is persistent across restarts using `electron-store`. Indicators clear automatically when the user switches to the channel and scrolls to the bottom. Fixed channel name alignment issue where it was pushed too far right.
 *   **Auto-Updates:** Basic implementation added using `electron-updater`. Checks for updates on startup and notifies the user if one is available and downloaded. Requires publishing builds to GitHub Releases.
-*   **Build Process:** Uses `electron-builder` (NSIS target). Configured to publish to GitHub Releases for auto-updates. Latest build includes all recent changes.
+*   **Build Process:** Uses `electron-builder` (NSIS target). Configured to publish to GitHub Releases for auto-updates.
 
-## IV. Current State & Last Actions:
+## IV. Current State & Last Actions (as of 2025-04-07 ~12:35 AM PDT):
 
-*   All features listed above are implemented.
-*   Recent fixes addressed: S3 image embedding CSP, typing indicator display, message spacing, attachment button alignment, mention highlighting scope.
-*   Code committed and pushed to GitHub (commit `7c17511`).
-*   Electron app rebuilt (`dist/gcCHAT Setup 1.0.0.exe`).
-*   **User confirmed correct S3 bucket name is `gcchat-uploads-unique`.**
-*   **User needs to ensure `AWS_S3_BUCKET_NAME` env var on Render is updated to `gcchat-uploads-unique` and deployment is complete.**
-*   **Added `electron-store` dependency for persistent client-side state.**
-*   **Added `electron-updater` dependency for auto-updates.**
+*   **Fixed:** Channel names in sidebar are now correctly left-aligned.
+*   **Added:** Attachment button ('+') now shows a context menu with options:
+    *   "Upload File..." (triggers existing file upload flow).
+    *   "Send Weather..." (prompts for city, fetches from OpenWeatherMap, sends as message).
+*   **Added:** `axios` dependency for weather API calls.
+*   **Configured:** OpenWeatherMap API key added to `main.js`.
+*   **Previous:** All features listed above were implemented, code pushed (commit `7c17511`), app rebuilt. S3 bucket confirmed. `electron-store` and `electron-updater` added.
 
 ## V. Workflow Reminders:
 

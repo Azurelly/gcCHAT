@@ -198,7 +198,7 @@ body {
   text-decoration: none;
   position: relative;
   /* gap: 4px; */ /* Removed gap here */
-  justify-content: space-between; /* Push indicators to the right */
+  /* justify-content: space-between; */ /* Removed: This pushed name right */
 }
 /* Apply margin only to the first *visible* indicator span */
 .channel-item > span.mention-badge:not([style*="display: none"]),
