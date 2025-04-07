@@ -75,7 +75,8 @@ const saveProfileSettingsButton = document.getElementById(
 const settingsAvatarPreview = document.getElementById('settings-avatar-preview');
 const profilePictureInput = document.getElementById('profile-picture-input');
 const attachmentButton = document.getElementById('attachment-button');
-const attachmentInput = document.getElementById('attachment-input'); // Added
+const attachmentInput = document.getElementById('attachment-input');
+const newMessagesBar = document.getElementById('new-messages-bar'); // Added
 
 // --- State ---
 let localUsername = '';
@@ -91,6 +92,9 @@ let partyModeActive = false;
 let typingTimeout = null;
 let currentlyTypingUsers = [];
 let currentProfileData = null; // Store own fetched profile data
+let isScrolledNearBottom = true; // Track if user is near the bottom
+let newMessagesCount = 0; // Count unseen messages
+let scrollTimeout = null; // Debounce scroll listener
 
 // --- UI Switching ---
 function showAuthView(showLogin = true) {
@@ -416,15 +420,26 @@ function addMessage(messageData) {
   // Check if it's an attachment message
   if (messageData.attachment) {
     const attachment = messageData.attachment;
-    const link = document.createElement('a');
-    // Use the full S3 URL provided by the server
-    link.href = attachment.url;
-    link.textContent = `${attachment.name} (${formatFileSize(attachment.size)})`;
-    link.target = '_blank'; // Open in default browser
-    link.rel = 'noopener noreferrer';
-    link.title = `Type: ${attachment.type}\nClick to download/view`;
-    link.classList.add('attachment-link');
-    textDiv.appendChild(link);
+    // Check if it's an image type
+    if (attachment.type && attachment.type.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.src = attachment.url;
+      img.alt = attachment.name;
+      img.title = `${attachment.name} (${formatFileSize(attachment.size)})`;
+      img.classList.add('message-attachment-image');
+      // Optional: Add click to open full image? For now, just display.
+      textDiv.appendChild(img);
+    } else {
+      // Generic attachment link for non-images
+      const link = document.createElement('a');
+      link.href = attachment.url;
+      link.textContent = `${attachment.name} (${formatFileSize(attachment.size)})`;
+      link.target = '_blank'; // Open in default browser
+      link.rel = 'noopener noreferrer';
+      link.title = `Type: ${attachment.type}\nClick to download/view`;
+      link.classList.add('attachment-link');
+      textDiv.appendChild(link);
+    }
   } else {
     // Regular text message
     textDiv.textContent = messageData.text;
@@ -446,14 +461,49 @@ function addMessage(messageData) {
   contentDiv.appendChild(textDiv);
   lastMessageSender = sender;
 
-  const isScrolledToBottom = messagesDiv.scrollHeight - messagesDiv.clientHeight <= messagesDiv.scrollTop + 5;
-  if (isScrolledToBottom) {
+  const wasNearBottom = isScrolledNearBottom; // Check before adding the message
+
+  // (Keep existing message group logic...)
+  // ... [avatar, header, contentDiv setup] ...
+
+  contentDiv.appendChild(textDiv);
+  lastMessageSender = sender;
+
+  // Scroll logic
+  if (sender === localUsername || wasNearBottom) {
+    // If sent by self OR user was already near bottom, scroll down
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    isScrolledNearBottom = true; // Ensure state is correct
+    hideNewMessagesBar(); // Hide bar if we auto-scrolled
+  } else {
+    // User is scrolled up, show/update notification bar
+    newMessagesCount++;
+    showNewMessagesBar();
   }
 }
+
+function scrollToBottom() {
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  hideNewMessagesBar();
+}
+
+function showNewMessagesBar() {
+  if (newMessagesCount > 0) {
+    newMessagesBar.querySelector('span').textContent = `${newMessagesCount} New Message${newMessagesCount > 1 ? 's' : ''} Below`;
+    newMessagesBar.style.display = 'block';
+  }
+}
+
+function hideNewMessagesBar() {
+  newMessagesCount = 0;
+  newMessagesBar.style.display = 'none';
+}
+
 function clearMessages() {
   messagesDiv.innerHTML = '';
   lastMessageSender = null;
+  isScrolledNearBottom = true; // Reset scroll state
+  hideNewMessagesBar(); // Hide bar on clear
 }
 function handleEditMessage(messageId) {
   const messageTextDiv = messagesDiv.querySelector(`.message-text[data-message-id="${messageId}"]`);
@@ -732,6 +782,26 @@ attachmentInput.addEventListener('change', (event) => {
   }
 });
 
+// Scroll listener for messages div
+messagesDiv.addEventListener('scroll', () => {
+  clearTimeout(scrollTimeout);
+  scrollTimeout = setTimeout(() => {
+    const threshold = 100; // Pixels from bottom to be considered "near"
+    const position = messagesDiv.scrollTop + messagesDiv.clientHeight;
+    const height = messagesDiv.scrollHeight;
+    isScrolledNearBottom = position >= height - threshold;
+
+    if (isScrolledNearBottom) {
+      hideNewMessagesBar(); // Hide bar if user scrolls down manually
+    }
+    // console.log('Scroll Pos:', messagesDiv.scrollTop, 'Near Bottom:', isScrolledNearBottom); // Debugging
+  }, 100); // Debounce scroll checks
+});
+
+// Click listener for the new messages bar
+newMessagesBar.addEventListener('click', scrollToBottom);
+
+
 // --- IPC Listeners ---
 window.electronAPI.onSignupResponse((response) => {
   console.log('Signup Response:', response);
@@ -781,9 +851,11 @@ window.electronAPI.onLoadHistory((data) => {
   console.log(`Loading history for channel: ${data.channel}`);
   currentChannel = data.channel;
   updateChannelHighlight();
-  clearMessages();
+  clearMessages(); // Resets scroll state and hides bar
   data.payload.forEach((msg) => addMessage(msg));
+  // Ensure initial scroll to bottom after history load
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  isScrolledNearBottom = true; // Explicitly set after load
 });
 window.electronAPI.onStatusUpdate((status) => {
   updateStatus(status);

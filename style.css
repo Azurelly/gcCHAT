@@ -13,6 +13,27 @@ body {
   overflow: hidden;
 }
 
+/* --- Scrollbar Styles (Discord-like) --- */
+::-webkit-scrollbar {
+  width: 8px; /* Width of the scrollbar */
+  height: 8px; /* Height for horizontal scrollbar */
+}
+::-webkit-scrollbar-track {
+  background: #2e3338; /* Track color */
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #202225; /* Thumb color */
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #1a1c1e; /* Thumb color on hover */
+}
+::-webkit-scrollbar-corner {
+  background: transparent; /* Hide the bottom-right corner */
+}
+
+
 /* --- Authentication View Styles --- */
 #auth-view {
   width: 100%;
@@ -98,6 +119,34 @@ body {
   font-size: 0.9em;
   display: none;
 }
+
+/* New Messages Notification Bar */
+#new-messages-bar {
+  position: absolute;
+  bottom: 70px; /* Position above input area + typing indicator */
+  left: 50%; /* Center horizontally */
+  transform: translateX(-50%);
+  background-color: #5865f2;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 10;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  display: none; /* Hidden by default */
+  opacity: 0.9;
+  transition: opacity 0.2s ease;
+}
+#new-messages-bar:hover {
+  opacity: 1;
+}
+#new-messages-bar .arrow {
+  margin-left: 5px;
+  font-weight: bold;
+}
+
 
 /* --- Chat View Layout --- */
 #chat-view {
@@ -190,6 +239,9 @@ body {
   align-items: center;
   justify-content: center;
   text-transform: uppercase; /* Ensure letter is uppercase */
+  background-size: cover; /* Added */
+  background-position: center; /* Added */
+  background-repeat: no-repeat; /* Added */
 }
 #user-area-username {
   font-weight: 500;
@@ -258,7 +310,7 @@ body {
 #messages {
   flex-grow: 1;
   overflow-y: auto;
-  padding: 0 0 10px 0;
+  padding: 0 0 0 0; /* Remove bottom padding, handled by input area */
   background-color: #36393f;
   border-bottom: none;
   display: flex;
@@ -269,9 +321,14 @@ body {
 .message-group {
   display: flex;
   align-items: flex-start;
-  margin-top: 17px;
+  margin-top: 17px; /* Space between different sender groups */
   position: relative;
   padding: 0 20px;
+}
+/* Reduce top margin for consecutive messages from the same sender */
+.message-group + .message-group[data-sender] {
+  /* This selector needs JS to add data-sender attribute */
+  /* We'll handle this in JS for now, but ideally CSS could do it if structure allowed */
 }
 .message-group .message-avatar {
   position: absolute;
@@ -290,6 +347,9 @@ body {
   flex-shrink: 0;
   text-transform: uppercase;
   cursor: pointer;
+  background-size: cover; /* Added */
+  background-position: center; /* Added */
+  background-repeat: no-repeat; /* Added */
 }
 .message-group-content {
   display: flex;
@@ -332,14 +392,32 @@ body {
 .message-text:hover {
   background-color: rgba(4, 4, 5, 0.07);
 }
+.attachment-link {
+  color: #00a8fc;
+  text-decoration: none;
+}
+.attachment-link:hover {
+  text-decoration: underline;
+}
+.message-attachment-image {
+  max-width: 350px; /* Limit image width */
+  max-height: 300px; /* Limit image height */
+  border-radius: 5px;
+  margin-top: 5px; /* Space above image */
+  cursor: pointer; /* Indicate it might be clickable later */
+  display: block; /* Ensure it takes block space */
+}
 
 /* Input Area Styles */
 #typing-indicator {
-  height: 20px; /* Reserve space */
-  padding: 0 20px;
+  height: 20px; /* Fixed height */
+  padding: 0 20px 5px 20px; /* Padding below text, above input */
   font-size: 0.85em;
   color: #a3a6aa;
   font-style: italic;
+  flex-shrink: 0; /* Prevent shrinking */
+  box-sizing: border-box;
+  line-height: 15px; /* Vertically center text slightly */
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -383,8 +461,8 @@ body {
   background-color: #36393f;
   flex-shrink: 0;
   border-top: none;
-  margin-top: 0; /* Remove margin, typing indicator handles space */
-  align-items: center; /* Align button and input vertically */
+  /* margin-top: 0; */ /* Let typing indicator handle space */
+  align-items: flex-end; /* Align items to bottom */
   gap: 10px; /* Add gap between button and input */
 }
 #attachment-button {
@@ -482,6 +560,9 @@ body {
   margin-right: 12px;
   flex-shrink: 0;
   text-transform: uppercase;
+  background-size: cover; /* Added */
+  background-position: center; /* Added */
+  background-repeat: no-repeat; /* Added */
 }
 .user-list-item .user-name {
   color: #b9bbbe;
@@ -616,6 +697,9 @@ body {
   margin-right: 20px;
   flex-shrink: 0;
   text-transform: uppercase;
+  background-size: cover; /* Added */
+  background-position: center; /* Added */
+  background-repeat: no-repeat; /* Added */
 }
 .profile-username-large {
   font-size: 1.5em;
