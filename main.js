@@ -13,8 +13,9 @@ const { autoUpdater } = pkg_updater;
 const require = createRequire(import.meta.url);
 const pkg = require('./package.json');
 const appVersion = pkg.version;
-logToRenderer('log', `[Main Init] App Version: ${appVersion}`);
-logToRenderer('log', '[Main Init] Imported autoUpdater:', typeof autoUpdater, autoUpdater ? Object.keys(autoUpdater) : 'N/A'); // Log type and keys if object
+// Use console.log here as mainWindow doesn't exist yet
+console.log(`[Main Init] App Version: ${appVersion}`);
+console.log('[Main Init] Imported autoUpdater:', typeof autoUpdater, autoUpdater ? Object.keys(autoUpdater) : 'N/A');
 
 // --- Configuration ---
 const SERVER_URL = 'wss://gcchat.onrender.com';
