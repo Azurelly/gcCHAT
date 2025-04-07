@@ -241,7 +241,33 @@ function createWindow() {
   mainWindow.webContents.once('did-finish-load', () => {
     connectToServer();
     // Check for updates after the window is ready and loaded
+    console.log('[AutoUpdater] Checking for updates...');
     autoUpdater.checkForUpdatesAndNotify();
+  });
+
+  // Add listeners for auto-updater events for logging
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[AutoUpdater] Checking for update...');
+  });
+  autoUpdater.on('update-available', (info) => {
+    console.log('[AutoUpdater] Update available:', info);
+  });
+  autoUpdater.on('update-not-available', (info) => {
+    console.log('[AutoUpdater] Update not available:', info);
+  });
+  autoUpdater.on('error', (err) => {
+    console.error('[AutoUpdater] Error:', err);
+  });
+  autoUpdater.on('download-progress', (progressObj) => {
+    let log_message = "Download speed: " + progressObj.bytesPerSecond;
+    log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
+    log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')';
+    console.log('[AutoUpdater] Download progress:', log_message);
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('[AutoUpdater] Update downloaded:', info);
+    // The 'checkForUpdatesAndNotify' automatically prompts the user to restart.
+    // If we wanted manual control, we'd call autoUpdater.quitAndInstall() here after user confirmation.
   });
 }
 
