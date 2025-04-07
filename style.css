@@ -196,14 +196,16 @@ body {
   cursor: pointer;
   font-weight: 500;
   text-decoration: none;
-  position: relative; /* Keep for potential future use, but flexbox handles layout now */
-  gap: 4px; /* Gap between hash and channel name */
+  position: relative;
+  /* gap: 4px; */ /* Removed gap here */
   justify-content: space-between; /* Push indicators to the right */
 }
-.channel-item > span:not([style*="display: none"]) {
-  /* Add gap only between visible indicators and channel name */
+/* Apply margin only to the first *visible* indicator span */
+.channel-item > span.mention-badge:not([style*="display: none"]),
+.channel-item > span.new-message-count:not([style*="display: none"]):first-of-type {
    margin-left: 4px;
 }
+
 
 .channel-item::before {
   content: '#';
@@ -295,13 +297,7 @@ body {
   color: #fff; /* Make hash white if active */
 }
 
-/* Ensure channel name itself doesn't shrink */
-.channel-item > a:first-of-type { /* Assuming channel name is the first direct child link/text node */
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex-grow: 1; /* Allow name to take up space */
-}
+/* Remove the incorrect rule targeting 'a:first-of-type' */
 
 #user-area {
   padding: 10px 16px;
