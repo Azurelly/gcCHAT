@@ -412,10 +412,18 @@ ipcMain.on('save-about-me', (_event, aboutMeText) => {
     sendToServer({ type: 'update-about-me', aboutMe: aboutMeText });
   }
 });
+ipcMain.on('save-profile-picture', (_event, imageDataUrl) => {
+  if (loggedInUsername) {
+    sendToServer({ type: 'update-profile-picture', profilePicture: imageDataUrl });
+  }
+});
 
 // Status Request IPC
 ipcMain.on('request-status', (_event) => {
   // Reply immediately with current known state
+  // Fetch profile picture from currentProfileData if available (might need to store it in main process state)
+  // For now, let's assume it's part of the loggedInUsername state or fetched separately if needed.
+  // We'll rely on the server sending updates for now.
   _event.reply('status-update', {
     connected: !!loggedInUsername, // True only if logged in
     wsConnected: clientSocket && clientSocket.readyState === WebSocket.OPEN,
@@ -427,5 +435,6 @@ ipcMain.on('request-status', (_event) => {
     username: loggedInUsername,
     currentChannel: currentChannel,
     isAdmin: isAdmin,
+    // profilePicture: currentProfileData?.profilePicture // Include if storing locally
   });
 });

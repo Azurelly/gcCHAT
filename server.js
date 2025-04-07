@@ -17,6 +17,7 @@ const CHANNELS_COLLECTION_NAME = 'channels';
 const SALT_ROUNDS = 10;
 const DEFAULT_CHANNEL = 'general';
 const TYPING_TIMEOUT_MS = 3000;
+const MAX_DATA_URL_LENGTH = 1.5 * 1024 * 1024; // Approx 1.5MB limit for profile pics
 
 // --- State ---
 let clients = new Map(); // ws -> { username, currentChannel, isAdmin, partyMode }
@@ -26,7 +27,6 @@ let messagesCollection;
 let usersCollection;
 let channelsCollection;
 let availableChannels = [DEFAULT_CHANNEL];
-// let partyModeActive = false; // REMOVED global party mode
 let typingUsers = new Map();
 
 // --- MongoDB Connection ---
@@ -140,22 +140,32 @@ function broadcastChannelList() {
 }
 async function broadcastUserListUpdate() {
   try {
+    // Fetch usernames AND profile pictures for all users
     const allUsersCursor = usersCollection.find(
       {},
-      { projection: { username: 1, _id: 0 } }
+      // Fetch username and profilePicture for all users
+      { projection: { username: 1, profilePicture: 1, _id: 0 } }
     );
     const allUserDocs = await allUsersCursor.toArray();
-    const allUsernames = allUserDocs.map((u) => u.username);
+    // Create a map for easy lookup: username -> profilePicture
+    const userPictureMap = allUserDocs.reduce((map, user) => {
+      map[user.username] = user.profilePicture;
+      return map;
+    }, {});
+
+    const allUserDetails = allUserDocs.map(u => ({ username: u.username, profilePicture: u.profilePicture }));
     const onlineUsernames = Array.from(onlineUsers.keys());
+
     console.log(
       '[Server] Broadcasting user list update. All:',
-      allUsernames,
+      allUserDetails.length,
       'Online:',
-      onlineUsernames
+      onlineUsernames.length
     );
+    // Send detailed list including profile pictures
     broadcast({
       type: 'user-list-update',
-      payload: { all: allUsernames, online: onlineUsernames },
+      payload: { all: allUserDetails, online: onlineUsernames }, // Send details for 'all'
     });
   } catch (error) {
     console.error('[Server] Error fetching or broadcasting user list:', error);
@@ -202,7 +212,7 @@ async function handleSignup(ws, data) {
       username: username.toLowerCase(),
       password: hashedPassword,
       admin: false,
-      profilePicture: null,
+      profilePicture: null, // Initialize as null
       aboutMe: '',
       createdAt: new Date(),
     });
@@ -266,7 +276,7 @@ async function handleLogin(ws, data) {
       username: user.username,
       currentChannel: currentChannel,
       isAdmin: user.admin || false,
-      partyMode: false, // Initialize party mode state for user
+      partyMode: false,
     };
     clients.set(ws, userInfo);
     onlineUsers.set(user.username, {
@@ -279,12 +289,15 @@ async function handleLogin(ws, data) {
     );
 
     const initialHistory = await loadHistoryFromDB(currentChannel);
+    // Send profile picture and aboutMe along with login response
     ws.send(
       JSON.stringify({
         type: 'login-response',
         success: true,
         username: user.username,
         isAdmin: userInfo.isAdmin,
+        profilePicture: user.profilePicture, // Send existing picture
+        aboutMe: user.aboutMe, // Send existing aboutMe
       })
     );
     ws.send(
@@ -462,6 +475,7 @@ async function handleGetUserProfile(ws, data) {
   try {
     const profile = await usersCollection.findOne(
       { username: targetUsername.toLowerCase() },
+      // Include profilePicture in projection
       { projection: { username: 1, aboutMe: 1, profilePicture: 1, _id: 0 } }
     );
     if (profile) {
@@ -568,7 +582,7 @@ async function handleDeleteMessage(ws, data) {
     const messageObjectId = new ObjectId(messageId);
     const message = await messagesCollection.findOne({ _id: messageObjectId });
     if (!message) {
-      return; // Message already deleted, maybe by another client? Silently ignore.
+      return; // Message already deleted
     }
     if (message.sender !== userInfo.username) {
       return ws.send(
@@ -590,12 +604,9 @@ async function handleDeleteMessage(ws, data) {
         payload: { _id: messageId, channel: message.channel },
       });
     } else {
-      // This might happen if the message was deleted between the findOne and deleteOne calls.
       console.warn(
         `[Server] Message ${messageId} not found for deletion, possibly already deleted.`
       );
-      // Optionally send an error, but might be better to just ignore if it's already gone.
-      // ws.send(JSON.stringify({ type: 'error', message: 'Failed to delete message (already deleted?)' }));
     }
   } catch (error) {
     console.error(`[Server] Error deleting message ${messageId}:`, error);
@@ -611,17 +622,14 @@ function handleStartTyping(ws, _data) {
   const userInfo = clients.get(ws);
   if (!userInfo || !userInfo.username) return;
   const username = userInfo.username;
-  // Clear existing timeout if user types again quickly
   if (typingUsers.has(username)) {
     clearTimeout(typingUsers.get(username));
   }
-  // Set a new timeout
   const timeoutId = setTimeout(() => {
     typingUsers.delete(username);
     broadcastTypingUpdate();
   }, TYPING_TIMEOUT_MS);
   typingUsers.set(username, timeoutId);
-  // Broadcast immediately that user started typing (or continued)
   broadcastTypingUpdate();
 }
 function handleStopTyping(ws, _data) {
@@ -635,11 +643,10 @@ function handleStopTyping(ws, _data) {
   }
 }
 
-// --- New Handlers for Profile Settings ---
+// --- Profile Settings Handlers ---
 async function handleGetOwnProfile(ws) {
   const userInfo = clients.get(ws);
   if (!userInfo || !userInfo.username) {
-    // Should not happen if called after login, but good practice to check
     return ws.send(
       JSON.stringify({ type: 'error', message: 'Not logged in' })
     );
@@ -647,7 +654,6 @@ async function handleGetOwnProfile(ws) {
   try {
     const profile = await usersCollection.findOne(
       { username: userInfo.username },
-      // Only send necessary fields for the settings modal
       { projection: { username: 1, aboutMe: 1, profilePicture: 1, _id: 0 } }
     );
     if (profile) {
@@ -655,16 +661,15 @@ async function handleGetOwnProfile(ws) {
         JSON.stringify({ type: 'own-profile-response', profile: profile })
       );
     } else {
-      // Should ideally not happen if user is logged in
       console.error(`[Server] Could not find profile for logged-in user: ${userInfo.username}`);
       ws.send(
-        JSON.stringify({ type: 'own-profile-response', profile: null }) // Send null profile on error
+        JSON.stringify({ type: 'own-profile-response', profile: null })
       );
     }
   } catch (error) {
     console.error(`[Server] Error fetching own profile for ${userInfo.username}:`, error);
     ws.send(
-      JSON.stringify({ type: 'own-profile-response', profile: null }) // Send null profile on error
+      JSON.stringify({ type: 'own-profile-response', profile: null })
     );
   }
 }
@@ -676,14 +681,12 @@ async function handleUpdateAboutMe(ws, data) {
       JSON.stringify({ type: 'error', message: 'Not logged in' })
     );
   }
-  const newAboutMe = data.aboutMe?.trim() ?? ''; // Get text, trim, default to empty string
-  // Add server-side length validation (matching HTML maxlength)
+  const newAboutMe = data.aboutMe?.trim() ?? '';
   if (newAboutMe.length > 190) {
      return ws.send(
       JSON.stringify({ type: 'error', message: 'About Me text exceeds 190 characters.' })
     );
   }
-
   try {
     const updateResult = await usersCollection.updateOne(
       { username: userInfo.username },
@@ -691,11 +694,9 @@ async function handleUpdateAboutMe(ws, data) {
     );
     if (updateResult.modifiedCount === 1) {
       console.log(`[Server] User ${userInfo.username} updated their About Me.`);
-      // Optionally send a success confirmation back
-      // ws.send(JSON.stringify({ type: 'about-me-update-success' }));
+      // Optionally broadcast profile update?
     } else if (updateResult.matchedCount === 1 && updateResult.modifiedCount === 0) {
       console.log(`[Server] User ${userInfo.username} About Me unchanged.`);
-      // Optionally send confirmation even if unchanged
     } else {
        console.warn(`[Server] Failed to update About Me for user ${userInfo.username}. Matched: ${updateResult.matchedCount}`);
        ws.send(JSON.stringify({ type: 'error', message: 'Failed to update profile.' }));
@@ -706,8 +707,48 @@ async function handleUpdateAboutMe(ws, data) {
   }
 }
 
+async function handleUpdateProfilePicture(ws, data) {
+  const userInfo = clients.get(ws);
+  if (!userInfo || !userInfo.username) {
+    return ws.send(
+      JSON.stringify({ type: 'error', message: 'Not logged in' })
+    );
+  }
+  const imageDataUrl = data.profilePicture;
+  // Basic validation: Check if it looks like a data URL and check length
+  if (!imageDataUrl || !imageDataUrl.startsWith('data:image/') || imageDataUrl.length > MAX_DATA_URL_LENGTH) {
+     console.warn(`[Server] Invalid profile picture data received from ${userInfo.username}. Length: ${imageDataUrl?.length}`);
+     return ws.send(
+      JSON.stringify({ type: 'error', message: 'Invalid or too large image data.' })
+    );
+  }
 
-// --- New Handler for Per-User Party Mode ---
+  try {
+    const updateResult = await usersCollection.updateOne(
+      { username: userInfo.username },
+      { $set: { profilePicture: imageDataUrl } }
+    );
+    if (updateResult.modifiedCount === 1) {
+      console.log(`[Server] User ${userInfo.username} updated their profile picture.`);
+      // Broadcast the update to all clients
+      broadcast({
+        type: 'profile-updated',
+        payload: {
+          username: userInfo.username,
+          profilePicture: imageDataUrl,
+        },
+      });
+    } else {
+       console.warn(`[Server] Failed to update profile picture for user ${userInfo.username}. Matched: ${updateResult.matchedCount}`);
+       ws.send(JSON.stringify({ type: 'error', message: 'Failed to update profile picture.' }));
+    }
+  } catch (error) {
+     console.error(`[Server] Error updating profile picture for ${userInfo.username}:`, error);
+     ws.send(JSON.stringify({ type: 'error', message: 'Server error updating profile picture.' }));
+  }
+}
+
+// --- Per-User Party Mode Handler ---
 function handleToggleUserPartyMode(ws, data) {
   const adminInfo = clients.get(ws);
   if (!adminInfo || !adminInfo.isAdmin) {
@@ -724,7 +765,6 @@ function handleToggleUserPartyMode(ws, data) {
       JSON.stringify({ type: 'error', message: 'Target username required' })
     );
   }
-
   const targetClientInfo = onlineUsers.get(targetUsername);
   if (!targetClientInfo || !targetClientInfo.ws) {
     return ws.send(
@@ -734,8 +774,6 @@ function handleToggleUserPartyMode(ws, data) {
       })
     );
   }
-
-  // Find the full client info in the main 'clients' map to update partyMode state
   const targetWs = targetClientInfo.ws;
   const fullTargetInfo = clients.get(targetWs);
   if (!fullTargetInfo) {
@@ -749,16 +787,11 @@ function handleToggleUserPartyMode(ws, data) {
       })
     );
   }
-
-  // Toggle the state for the target user
   fullTargetInfo.partyMode = !fullTargetInfo.partyMode;
-  clients.set(targetWs, fullTargetInfo); // Update the map
-
+  clients.set(targetWs, fullTargetInfo);
   console.log(
     `[Server] Admin ${adminInfo.username} toggled party mode for ${targetUsername} to ${fullTargetInfo.partyMode}`
   );
-
-  // Send update ONLY to the target client
   if (targetWs.readyState === WebSocket.OPEN) {
     targetWs.send(
       JSON.stringify({
@@ -783,56 +816,28 @@ async function startServer() {
     const clientIdentifier =
       req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     console.log(`[Server] Client connected: ${clientIdentifier}`);
-    clients.set(ws, null);
+    clients.set(ws, null); // Initialize client info as null until login
 
     ws.on('message', async (message) => {
       let parsedMessage;
       try {
         parsedMessage = JSON.parse(message);
         switch (parsedMessage.type) {
-          case 'signup':
-            await handleSignup(ws, parsedMessage);
-            break;
-          case 'login':
-            await handleLogin(ws, parsedMessage);
-            break;
-          case 'chat':
-            await handleChatMessage(ws, parsedMessage);
-            break;
-          case 'switch-channel':
-            await handleSwitchChannel(ws, parsedMessage);
-            break;
-          case 'create-channel':
-            await handleCreateChannel(ws, parsedMessage);
-            break;
-          case 'delete-channel':
-            await handleDeleteChannel(ws, parsedMessage);
-            break;
-          case 'get-user-profile':
-            await handleGetUserProfile(ws, parsedMessage); // For viewing others
-            break;
-          case 'get-own-profile': // New: For settings modal
-            await handleGetOwnProfile(ws);
-            break;
-          case 'update-about-me': // New: For saving settings
-            await handleUpdateAboutMe(ws, parsedMessage);
-            break;
-          case 'edit-message':
-            await handleEditMessage(ws, parsedMessage);
-            break;
-          case 'delete-message':
-            await handleDeleteMessage(ws, parsedMessage);
-            break;
-          case 'start-typing':
-            handleStartTyping(ws, parsedMessage);
-            break;
-          case 'stop-typing':
-            handleStopTyping(ws, parsedMessage);
-            break;
-          case 'toggle-user-party-mode':
-            handleToggleUserPartyMode(ws, parsedMessage);
-            break; // New
-          // Removed 'toggle-party-mode' (global) and 'get-all-users'
+          case 'signup': await handleSignup(ws, parsedMessage); break;
+          case 'login': await handleLogin(ws, parsedMessage); break;
+          case 'chat': await handleChatMessage(ws, parsedMessage); break;
+          case 'switch-channel': await handleSwitchChannel(ws, parsedMessage); break;
+          case 'create-channel': await handleCreateChannel(ws, parsedMessage); break;
+          case 'delete-channel': await handleDeleteChannel(ws, parsedMessage); break;
+          case 'get-user-profile': await handleGetUserProfile(ws, parsedMessage); break;
+          case 'get-own-profile': await handleGetOwnProfile(ws); break;
+          case 'update-about-me': await handleUpdateAboutMe(ws, parsedMessage); break;
+          case 'update-profile-picture': await handleUpdateProfilePicture(ws, parsedMessage); break; // New
+          case 'edit-message': await handleEditMessage(ws, parsedMessage); break;
+          case 'delete-message': await handleDeleteMessage(ws, parsedMessage); break;
+          case 'start-typing': handleStartTyping(ws, parsedMessage); break;
+          case 'stop-typing': handleStopTyping(ws, parsedMessage); break;
+          case 'toggle-user-party-mode': handleToggleUserPartyMode(ws, parsedMessage); break;
           default:
             console.warn(
               `[Server] Received unknown message type: ${parsedMessage.type}`
@@ -852,27 +857,21 @@ async function startServer() {
       const clientDesc = `${clientIdentifier}${userInfo?.username ? ` (${userInfo.username})` : ''}`;
       console.log(`[Server] Client disconnected: ${clientDesc}`);
       if (userInfo && userInfo.username) {
-        // Clear typing status if user disconnects while typing
         if (typingUsers.has(userInfo.username)) {
           clearTimeout(typingUsers.get(userInfo.username));
           typingUsers.delete(userInfo.username);
-          broadcastTypingUpdate(); // Update others that user stopped typing
+          broadcastTypingUpdate();
         }
-        // Remove from online list and notify others
         onlineUsers.delete(userInfo.username);
         broadcastUserListUpdate();
       }
-      clients.delete(ws); // Remove from main client map
+      clients.delete(ws);
     });
 
     ws.on('error', (error) => {
       const userInfo = clients.get(ws);
       const clientDesc = `${clientIdentifier}${userInfo?.username ? ` (${userInfo.username})` : ''}`;
-      console.error(
-        `[Server] WebSocket error for client ${clientDesc}:`,
-        error
-      );
-      // Perform similar cleanup as 'close' event
+      console.error(`[Server] WebSocket error for client ${clientDesc}:`, error);
       if (userInfo && userInfo.username) {
         if (typingUsers.has(userInfo.username)) {
           clearTimeout(typingUsers.get(userInfo.username));
@@ -883,11 +882,7 @@ async function startServer() {
         broadcastUserListUpdate();
       }
       clients.delete(ws);
-      // Optionally, terminate the connection if it's still open after an error
-      if (
-        ws.readyState === WebSocket.OPEN ||
-        ws.readyState === WebSocket.CONNECTING
-      ) {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
         ws.terminate();
       }
     });
@@ -910,7 +905,7 @@ async function startServer() {
     });
     setTimeout(() => {
       console.log('[Server] Forcing remaining connections closed.');
-      clients.forEach((userInfo, ws) => ws.terminate());
+      clients.forEach((_userInfo, ws) => ws.terminate());
       process.exit(1);
     }, 3000);
   });

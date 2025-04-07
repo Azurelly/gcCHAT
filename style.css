@@ -384,6 +384,26 @@ body {
   flex-shrink: 0;
   border-top: none;
   margin-top: 0; /* Remove margin, typing indicator handles space */
+  align-items: center; /* Align button and input vertically */
+  gap: 10px; /* Add gap between button and input */
+}
+#attachment-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #b9bbbe;
+  color: #4f545c;
+  border: none;
+  font-size: 1.5em;
+  font-weight: 600;
+  line-height: 22px; /* Adjust for vertical centering */
+  text-align: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+#attachment-button:hover {
+  background-color: #dcddde;
 }
 #message-input {
   flex-grow: 1;
@@ -396,6 +416,8 @@ body {
   font-size: 1em;
   line-height: 1.375;
   resize: none;
+  /* Remove margin that was there for send button */
+  margin-right: 0;
 }
 #message-input:focus {
   outline: none;
@@ -403,10 +425,9 @@ body {
 #message-input::placeholder {
   color: #72767d;
 }
-#send-button {
-  display: none;
-}
-#send-button:disabled,
+/* Send button removed */
+/* #send-button { display: none; } */
+#attachment-button:disabled, /* Disable attachment button too */
 #message-input:disabled {
   background-color: #40444b;
   cursor: not-allowed;
@@ -601,7 +622,8 @@ body {
   font-weight: 600;
   color: #fff;
 }
-.profile-body {
+.profile-body,
+.modal-body { /* Apply padding to both */
   padding: 20px;
 }
 .profile-body h4 {
@@ -622,6 +644,48 @@ body {
 }
 
 /* --- Profile Settings Modal Specific Styles --- */
+.settings-profile-picture-area {
+  margin-bottom: 20px;
+  text-align: center; /* Center the avatar and text */
+}
+.settings-profile-picture-area label {
+  display: block;
+  margin-bottom: 10px;
+  font-weight: 600;
+  color: #b9bbbe;
+  font-size: 0.8em;
+  text-transform: uppercase;
+  text-align: left; /* Align label left */
+}
+#settings-avatar-preview {
+  /* Reuse large avatar style but make it clickable */
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background-color: #7289da;
+  color: #fff;
+  font-weight: 600;
+  font-size: 2.5em;
+  display: inline-flex; /* Use inline-flex for centering */
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 10px auto; /* Center horizontally */
+  flex-shrink: 0;
+  text-transform: uppercase;
+  cursor: pointer;
+  background-size: cover; /* For image previews */
+  background-position: center; /* For image previews */
+  background-repeat: no-repeat; /* For image previews */
+}
+#settings-avatar-preview:hover {
+  opacity: 0.8;
+}
+.settings-profile-picture-area small {
+  display: block;
+  font-size: 0.75em;
+  color: #72767d;
+}
+
 #profile-settings-modal .input-group textarea {
   width: 100%;
   padding: 10px;

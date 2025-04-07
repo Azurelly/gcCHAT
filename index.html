@@ -57,13 +57,15 @@
           <!-- Content set by JS -->
         </div>
         <div id="input-area">
+          <button id="attachment-button" title="Attach File">+</button> <!-- New Button -->
           <input
             type="text"
             id="message-input"
             placeholder="Type your message..."
             disabled
           />
-          <button id="send-button" disabled>Send</button>
+          <!-- Send button removed/hidden by default -->
+          <!-- <button id="send-button" disabled>Send</button> -->
         </div>
       </div>
       <!-- User List Sidebar -->
@@ -173,10 +175,19 @@
         <button id="close-profile-settings-modal" class="close-button">
           &times;
         </button>
-        <h3>User Settings</h3>
-        <div class="input-group">
-          <label for="settings-about-me-input">About Me</label>
-          <textarea
+        <div class="modal-body"> <!-- Add this wrapper -->
+          <h3>User Settings</h3> <!-- Move H3 inside -->
+          <!-- Profile Picture Section -->
+          <div class="settings-profile-picture-area">
+            <label>Profile Picture</label>
+            <div id="settings-avatar-preview" class="profile-avatar-large" title="Click to change picture">?</div>
+            <input type="file" id="profile-picture-input" accept="image/*" style="display: none;" />
+            <small>Click avatar to upload image.</small>
+          </div>
+          <!-- About Me Section -->
+          <div class="input-group">
+            <label for="settings-about-me-input">About Me</label>
+            <textarea
             id="settings-about-me-input"
             rows="4"
             maxlength="190"
@@ -196,6 +207,7 @@
             Save Changes
           </button>
         </div>
+        </div> <!-- Close modal-body -->
       </div>
     </div>
 

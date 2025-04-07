@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // New: Own Profile Settings
   requestOwnProfile: () => ipcRenderer.send('request-own-profile'),
   saveAboutMe: (aboutMeText) => ipcRenderer.send('save-about-me', aboutMeText),
+  saveProfilePicture: (imageDataUrl) => ipcRenderer.send('save-profile-picture', imageDataUrl), // New
   onOwnProfileResponse: (callback) =>
     ipcRenderer.on('own-profile-response', (_event, value) => callback(value)),
 
