@@ -860,7 +860,7 @@ async function handleUploadFile(ws, data) {
     Key: uniqueFilename,
     Body: fileBuffer,
     ContentType: fileType,
-    // ACL: 'public-read', // Set object ACL to public-read if bucket allows it
+    ACL: 'public-read', // Explicitly set object ACL to public-read
   };
 
   try {
