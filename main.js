@@ -185,6 +185,9 @@ function connectToServer() {
         case 'typing-update':
           mainWindow?.webContents.send('typing-update', parsedMessage.payload);
           break;
+        case 'link-riot-account-response': // New: Handle response from server
+           mainWindow?.webContents.send('link-riot-account-response', parsedMessage);
+           break;
         case 'error': // Server-side errors (e.g., permission denied)
           mainWindow?.webContents.send('error', parsedMessage);
           break;
@@ -622,6 +625,19 @@ ipcMain.on('send-weather-message', async (_event, cityName) => {
 
   console.log(`[Weather] Sending weather message: ${weatherMessage}`);
   sendToServer({ type: 'chat', text: weatherMessage }); // Send as a regular chat message
+});
+
+// Riot Linking IPC Handler (New)
+ipcMain.on('link-riot-account', (_event, linkData) => {
+  console.log('[Main] Received link-riot-account IPC:', linkData);
+  if (loggedInUsername) {
+    // Forward the request to the server
+    sendToServer({ type: 'link-riot-account', ...linkData });
+  } else {
+    // Handle case where user somehow triggers this while not logged in
+    console.warn('[Main] link-riot-account received but user not logged in.');
+    // Optionally send an error back to renderer? The server will handle it too.
+  }
 });
 
 
