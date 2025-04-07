@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('edit-message', { messageId, newText }),
   deleteMessage: (messageId) =>
     ipcRenderer.send('delete-message', { messageId }),
+  sendFileAttachment: (fileData) => // New channel for sending files
+    ipcRenderer.send('send-file-attachment', fileData),
   switchChannel: (channelName) =>
     ipcRenderer.send('switch-channel', channelName),
   createChannel: (channelName) =>
@@ -106,6 +108,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('status-update');
     ipcRenderer.removeAllListeners('send-error');
     ipcRenderer.removeAllListeners('error');
+    // Add cleanup for any potential future listeners related to attachments
+    // ipcRenderer.removeAllListeners('file-upload-progress');
+    // ipcRenderer.removeAllListeners('file-upload-complete');
   },
 });
 

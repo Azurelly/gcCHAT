@@ -252,6 +252,27 @@ ipcMain.on('send-message', (_event, messageText) => {
     );
   }
 });
+
+// Handle file attachment upload from renderer
+ipcMain.on('send-file-attachment', (_event, fileData) => {
+  if (loggedInUsername && currentChannel && fileData && fileData.data) {
+    // Convert ArrayBuffer received from renderer to Node.js Buffer
+    const buffer = Buffer.from(fileData.data);
+    console.log(`[Main] Received file "${fileData.name}" (${buffer.length} bytes), sending to server...`);
+    sendToServer({
+      type: 'upload-file',
+      name: fileData.name,
+      fileType: fileData.type, // Use fileType to avoid conflict with message 'type'
+      buffer: buffer, // Send the Buffer
+    });
+  } else {
+     mainWindow?.webContents.send(
+      'send-error',
+      'Cannot send file: Not logged in or file data missing.'
+    );
+  }
+});
+
 ipcMain.on('switch-channel', (_event, channelName) => {
   if (loggedInUsername) {
     if (sendToServer({ type: 'switch-channel', channel: channelName })) {

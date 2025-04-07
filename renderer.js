@@ -75,6 +75,7 @@ const saveProfileSettingsButton = document.getElementById(
 const settingsAvatarPreview = document.getElementById('settings-avatar-preview');
 const profilePictureInput = document.getElementById('profile-picture-input');
 const attachmentButton = document.getElementById('attachment-button');
+const attachmentInput = document.getElementById('attachment-input'); // Added
 
 // --- State ---
 let localUsername = '';
@@ -411,8 +412,25 @@ function addMessage(messageData) {
   const textDiv = document.createElement('div');
   textDiv.classList.add('message-text');
   textDiv.dataset.messageId = messageId;
-  textDiv.textContent = messageData.text;
-  if (messageData.edited) {
+
+  // Check if it's an attachment message
+  if (messageData.attachment) {
+    const attachment = messageData.attachment;
+    const link = document.createElement('a');
+    // Use the full S3 URL provided by the server
+    link.href = attachment.url;
+    link.textContent = `${attachment.name} (${formatFileSize(attachment.size)})`;
+    link.target = '_blank'; // Open in default browser
+    link.rel = 'noopener noreferrer';
+    link.title = `Type: ${attachment.type}\nClick to download/view`;
+    link.classList.add('attachment-link');
+    textDiv.appendChild(link);
+  } else {
+    // Regular text message
+    textDiv.textContent = messageData.text;
+  }
+
+  if (messageData.edited && !messageData.attachment) { // Don't show (edited) for attachments for now
     const editedSpan = document.createElement('span');
     editedSpan.classList.add('timestamp');
     editedSpan.style.marginLeft = '5px';
@@ -669,8 +687,49 @@ messageInput.addEventListener('input', () => {
 });
 userSettingsButton.addEventListener('click', showProfileSettingsModal);
 attachmentButton.addEventListener('click', () => {
-  // TODO: Implement context menu for attachments (Image, Poll, etc.)
-  alert('Attachment options (like Send Image) coming soon!');
+  if (!attachmentButton.disabled) {
+    attachmentInput.click(); // Trigger hidden file input
+  }
+});
+
+// Listener for the hidden file input
+attachmentInput.addEventListener('change', (event) => {
+  const files = event.target.files;
+  if (files.length > 0) {
+    console.log('Files selected:', files);
+
+    for (const file of files) {
+      // Basic size check (e.g., 10MB limit for now)
+      const maxSize = 10 * 1024 * 1024;
+      if (file.size > maxSize) {
+        alert(`File "${file.name}" is too large (max ${maxSize / 1024 / 1024}MB).`);
+        continue; // Skip this file
+      }
+
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        const arrayBuffer = e.target.result;
+        console.log(`Read file "${file.name}" (${arrayBuffer.byteLength} bytes)`);
+        // Send file data via IPC
+        window.electronAPI.sendFileAttachment({
+          name: file.name,
+          type: file.type,
+          data: arrayBuffer, // Send ArrayBuffer directly
+        });
+      };
+
+      reader.onerror = (error) => {
+        console.error(`Error reading file "${file.name}":`, error);
+        alert(`Error reading file "${file.name}".`);
+      };
+
+      reader.readAsArrayBuffer(file); // Read as ArrayBuffer
+    }
+
+    // Reset the input value so the same file can be selected again if needed
+    event.target.value = null;
+  }
 });
 
 // --- IPC Listeners ---
@@ -860,6 +919,25 @@ function simpleHash(str) {
     hash |= 0; // Convert to 32bit integer
   }
   return Math.abs(hash);
+}
+function formatFileSize(bytes, si = false, dp = 1) {
+  const thresh = si ? 1000 : 1024;
+  if (Math.abs(bytes) < thresh) {
+    return bytes + ' B';
+  }
+  const units = si
+    ? ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+    : ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+  let u = -1;
+  const r = 10 ** dp;
+  do {
+    bytes /= thresh;
+    ++u;
+  } while (
+    Math.round(Math.abs(bytes) * r) / r >= thresh &&
+    u < units.length - 1
+  );
+  return bytes.toFixed(dp) + ' ' + units[u];
 }
 function getAvatarColor(username) {
   const colors = [

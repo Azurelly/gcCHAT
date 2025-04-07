@@ -1,15 +1,15 @@
 import { WebSocketServer, WebSocket } from 'ws';
-// import path from 'path'; // No longer needed after removing __dirname
-// import os from 'os'; // Unused import
-// import { fileURLToPath } from 'url'; // Unused import
+import path from 'path'; // Keep for potential future use, though not strictly needed now
+import { v4 as uuidv4 } from 'uuid';
 import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
 import bcrypt from 'bcrypt';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'; // Added AWS S3 Client
 
 // --- Configuration ---
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI =
   process.env.MONGODB_URI ||
-  'mongodb+srv://Azurely:<po2yOHjRLNJ4Gapv>@gcchat.aqgwni3.mongodb.net/chatApp?retryWrites=true&w=majority&appName=gcCHAT'; // Ensure correct password here
+  'mongodb+srv://Azurely:po2yOHjRLNJ4Gapv@gcchat.aqgwni3.mongodb.net/chatApp?retryWrites=true&w=majority&appName=gcCHAT';
 const DB_NAME = 'chatApp';
 const MESSAGES_COLLECTION_NAME = 'messages';
 const USERS_COLLECTION_NAME = 'users';
@@ -17,17 +17,49 @@ const CHANNELS_COLLECTION_NAME = 'channels';
 const SALT_ROUNDS = 10;
 const DEFAULT_CHANNEL = 'general';
 const TYPING_TIMEOUT_MS = 3000;
-const MAX_DATA_URL_LENGTH = 1.5 * 1024 * 1024; // Approx 1.5MB limit for profile pics
+const MAX_DATA_URL_LENGTH = 1.5 * 1024 * 1024;
+const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10MB limit
+
+// AWS S3 Configuration (Read from Environment Variables)
+const AWS_REGION = process.env.AWS_REGION || 'us-west-1'; // Default to user-provided region
+const AWS_S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || 'gcchat-s3-uploader'; // Default to user-provided bucket
+const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID; // Must be set in environment
+const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY; // Must be set in environment
 
 // --- State ---
 let clients = new Map(); // ws -> { username, currentChannel, isAdmin, partyMode }
-let onlineUsers = new Map(); // username -> { ws, currentChannel, isAdmin } // Keep this for quick lookup by username
+let onlineUsers = new Map(); // username -> { ws, currentChannel, isAdmin }
 let db;
 let messagesCollection;
 let usersCollection;
 let channelsCollection;
 let availableChannels = [DEFAULT_CHANNEL];
 let typingUsers = new Map();
+let s3Client; // S3 Client instance
+
+// --- AWS S3 Client Initialization ---
+function initializeS3Client() {
+  if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY || !AWS_S3_BUCKET_NAME || !AWS_REGION) {
+    console.warn(
+      '[Server] WARNING: AWS S3 environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_BUCKET_NAME, AWS_REGION) are not fully configured. File uploads will fail.'
+    );
+    s3Client = null; // Ensure client is null if not configured
+    return;
+  }
+  try {
+    s3Client = new S3Client({
+      region: AWS_REGION,
+      credentials: {
+        accessKeyId: AWS_ACCESS_KEY_ID,
+        secretAccessKey: AWS_SECRET_ACCESS_KEY,
+      },
+    });
+    console.log(`[Server] AWS S3 Client initialized for region ${AWS_REGION} and bucket ${AWS_S3_BUCKET_NAME}`);
+  } catch (error) {
+    console.error('[Server] Failed to initialize AWS S3 Client:', error);
+    s3Client = null;
+  }
+}
 
 // --- MongoDB Connection ---
 async function connectDB() {
@@ -118,9 +150,11 @@ async function loadHistoryFromDB(channel = DEFAULT_CHANNEL, limit = 100) {
 async function saveMessageToDB(messageData) {
   if (!messagesCollection || !messageData.channel) return;
   try {
-    await messagesCollection.insertOne(messageData);
+    const result = await messagesCollection.insertOne(messageData);
+    return result.insertedId; // Return the ID of the saved message
   } catch (error) {
     console.error('[Server] Error saving message to database:', error);
+    return null;
   }
 }
 
@@ -140,19 +174,11 @@ function broadcastChannelList() {
 }
 async function broadcastUserListUpdate() {
   try {
-    // Fetch usernames AND profile pictures for all users
     const allUsersCursor = usersCollection.find(
       {},
-      // Fetch username and profilePicture for all users
       { projection: { username: 1, profilePicture: 1, _id: 0 } }
     );
     const allUserDocs = await allUsersCursor.toArray();
-    // Create a map for easy lookup: username -> profilePicture
-    const userPictureMap = allUserDocs.reduce((map, user) => {
-      map[user.username] = user.profilePicture;
-      return map;
-    }, {});
-
     const allUserDetails = allUserDocs.map(u => ({ username: u.username, profilePicture: u.profilePicture }));
     const onlineUsernames = Array.from(onlineUsers.keys());
 
@@ -162,10 +188,9 @@ async function broadcastUserListUpdate() {
       'Online:',
       onlineUsernames.length
     );
-    // Send detailed list including profile pictures
     broadcast({
       type: 'user-list-update',
-      payload: { all: allUserDetails, online: onlineUsernames }, // Send details for 'all'
+      payload: { all: allUserDetails, online: onlineUsernames },
     });
   } catch (error) {
     console.error('[Server] Error fetching or broadcasting user list:', error);
@@ -212,7 +237,7 @@ async function handleSignup(ws, data) {
       username: username.toLowerCase(),
       password: hashedPassword,
       admin: false,
-      profilePicture: null, // Initialize as null
+      profilePicture: null,
       aboutMe: '',
       createdAt: new Date(),
     });
@@ -270,7 +295,6 @@ async function handleLogin(ws, data) {
         })
       );
 
-    // Login successful
     const currentChannel = DEFAULT_CHANNEL;
     const userInfo = {
       username: user.username,
@@ -289,15 +313,14 @@ async function handleLogin(ws, data) {
     );
 
     const initialHistory = await loadHistoryFromDB(currentChannel);
-    // Send profile picture and aboutMe along with login response
     ws.send(
       JSON.stringify({
         type: 'login-response',
         success: true,
         username: user.username,
         isAdmin: userInfo.isAdmin,
-        profilePicture: user.profilePicture, // Send existing picture
-        aboutMe: user.aboutMe, // Send existing aboutMe
+        profilePicture: user.profilePicture,
+        aboutMe: user.aboutMe,
       })
     );
     ws.send(
@@ -337,8 +360,11 @@ async function handleChatMessage(ws, data) {
       timestamp: Date.now(),
       edited: false,
     };
-    await saveMessageToDB(messageData);
-    broadcast(messageData);
+    const insertedId = await saveMessageToDB(messageData);
+    if (insertedId) {
+      messageData._id = insertedId;
+      broadcast(messageData);
+    }
   } else {
     console.warn(
       '[Server] Received invalid chat message format or missing channel:',
@@ -475,7 +501,6 @@ async function handleGetUserProfile(ws, data) {
   try {
     const profile = await usersCollection.findOne(
       { username: targetUsername.toLowerCase() },
-      // Include profilePicture in projection
       { projection: { username: 1, aboutMe: 1, profilePicture: 1, _id: 0 } }
     );
     if (profile) {
@@ -582,7 +607,7 @@ async function handleDeleteMessage(ws, data) {
     const messageObjectId = new ObjectId(messageId);
     const message = await messagesCollection.findOne({ _id: messageObjectId });
     if (!message) {
-      return; // Message already deleted
+      return;
     }
     if (message.sender !== userInfo.username) {
       return ws.send(
@@ -694,7 +719,6 @@ async function handleUpdateAboutMe(ws, data) {
     );
     if (updateResult.modifiedCount === 1) {
       console.log(`[Server] User ${userInfo.username} updated their About Me.`);
-      // Optionally broadcast profile update?
     } else if (updateResult.matchedCount === 1 && updateResult.modifiedCount === 0) {
       console.log(`[Server] User ${userInfo.username} About Me unchanged.`);
     } else {
@@ -715,7 +739,6 @@ async function handleUpdateProfilePicture(ws, data) {
     );
   }
   const imageDataUrl = data.profilePicture;
-  // Basic validation: Check if it looks like a data URL and check length
   if (!imageDataUrl || !imageDataUrl.startsWith('data:image/') || imageDataUrl.length > MAX_DATA_URL_LENGTH) {
      console.warn(`[Server] Invalid profile picture data received from ${userInfo.username}. Length: ${imageDataUrl?.length}`);
      return ws.send(
@@ -730,7 +753,6 @@ async function handleUpdateProfilePicture(ws, data) {
     );
     if (updateResult.modifiedCount === 1) {
       console.log(`[Server] User ${userInfo.username} updated their profile picture.`);
-      // Broadcast the update to all clients
       broadcast({
         type: 'profile-updated',
         payload: {
@@ -802,9 +824,89 @@ function handleToggleUserPartyMode(ws, data) {
   }
 }
 
+// --- File Upload Handler (AWS S3) ---
+async function handleUploadFile(ws, data) {
+  const userInfo = clients.get(ws);
+  if (!userInfo || !userInfo.username) {
+    return ws.send(JSON.stringify({ type: 'error', message: 'Not logged in' }));
+  }
+  if (!s3Client) {
+    console.error('[Server] S3 client not initialized. Cannot upload file.');
+    return ws.send(JSON.stringify({ type: 'error', message: 'File upload service not configured.' }));
+  }
+  const targetChannel = userInfo.currentChannel;
+  if (!targetChannel) {
+    return ws.send(JSON.stringify({ type: 'error', message: 'No active channel' }));
+  }
+
+  if (!data.buffer || data.buffer.type !== 'Buffer' || !Array.isArray(data.buffer.data)) {
+     console.error('[Server] Invalid buffer format received for file upload:', data.buffer);
+     return ws.send(JSON.stringify({ type: 'error', message: 'Invalid file data format received.' }));
+  }
+  const fileBuffer = Buffer.from(data.buffer.data);
+
+  const fileName = data.name || 'upload';
+  const fileType = data.fileType || 'application/octet-stream';
+  const fileSize = fileBuffer.length;
+
+  if (fileSize > MAX_UPLOAD_SIZE) {
+    return ws.send(JSON.stringify({ type: 'error', message: `File size exceeds limit (${MAX_UPLOAD_SIZE / 1024 / 1024}MB)` }));
+  }
+
+  const uniqueFilename = `${uuidv4()}-${fileName}`; // S3 Object Key
+
+  const params = {
+    Bucket: AWS_S3_BUCKET_NAME,
+    Key: uniqueFilename,
+    Body: fileBuffer,
+    ContentType: fileType,
+    // ACL: 'public-read', // Set object ACL to public-read if bucket allows it
+  };
+
+  try {
+    const command = new PutObjectCommand(params);
+    await s3Client.send(command);
+    console.log(`[Server] User ${userInfo.username} uploaded file to S3: ${uniqueFilename} (${fileSize} bytes)`);
+
+    // Construct the public URL
+    // Note: Ensure your bucket policy allows public reads or use pre-signed URLs for more security
+    const fileUrl = `https://${AWS_S3_BUCKET_NAME}.s3.${AWS_REGION}.amazonaws.com/${uniqueFilename}`;
+
+    const messageData = {
+      type: 'chat',
+      channel: targetChannel,
+      sender: userInfo.username,
+      timestamp: Date.now(),
+      edited: false,
+      attachment: {
+        url: fileUrl, // Public S3 URL
+        name: fileName,
+        type: fileType,
+        size: fileSize,
+      },
+      text: '',
+    };
+
+    const insertedId = await saveMessageToDB(messageData);
+    if (insertedId) {
+      messageData._id = insertedId;
+      broadcast(messageData);
+    } else {
+      ws.send(JSON.stringify({ type: 'error', message: 'Failed to save attachment message to DB.' }));
+      // TODO: Consider deleting the uploaded S3 object if DB save fails
+    }
+  } catch (error) {
+    console.error(`[Server] Error uploading file ${uniqueFilename} to S3:`, error);
+    ws.send(JSON.stringify({ type: 'error', message: 'Server error uploading file.' }));
+  }
+}
+
+
 // --- Server Setup ---
 async function startServer() {
+  initializeS3Client(); // Initialize S3 client on startup
   await connectDB();
+  // ensureUploadsDirectory(); // No longer needed for S3
   const server = new WebSocketServer({ port: PORT });
   server.on('listening', () =>
     console.log(
@@ -816,7 +918,7 @@ async function startServer() {
     const clientIdentifier =
       req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     console.log(`[Server] Client connected: ${clientIdentifier}`);
-    clients.set(ws, null); // Initialize client info as null until login
+    clients.set(ws, null);
 
     ws.on('message', async (message) => {
       let parsedMessage;
@@ -832,12 +934,13 @@ async function startServer() {
           case 'get-user-profile': await handleGetUserProfile(ws, parsedMessage); break;
           case 'get-own-profile': await handleGetOwnProfile(ws); break;
           case 'update-about-me': await handleUpdateAboutMe(ws, parsedMessage); break;
-          case 'update-profile-picture': await handleUpdateProfilePicture(ws, parsedMessage); break; // New
+          case 'update-profile-picture': await handleUpdateProfilePicture(ws, parsedMessage); break;
           case 'edit-message': await handleEditMessage(ws, parsedMessage); break;
           case 'delete-message': await handleDeleteMessage(ws, parsedMessage); break;
           case 'start-typing': handleStartTyping(ws, parsedMessage); break;
           case 'stop-typing': handleStopTyping(ws, parsedMessage); break;
           case 'toggle-user-party-mode': handleToggleUserPartyMode(ws, parsedMessage); break;
+          case 'upload-file': await handleUploadFile(ws, parsedMessage); break; // Handles S3 upload
           default:
             console.warn(
               `[Server] Received unknown message type: ${parsedMessage.type}`
