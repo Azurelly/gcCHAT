@@ -102,6 +102,7 @@ let mentionQuery = '';
 let mentionStartIndex = -1; // Track where the '@' started
 let mentionSuggestions = [];
 let selectedMentionIndex = -1;
+let channelReadStates = {}; // { channelName: { unreadCount: 0, hasMention: false } }
 
 
 // --- UI Switching ---
@@ -273,6 +274,40 @@ profilePictureInput.addEventListener('change', (event) => {
 });
 
 // --- Channel UI ---
+// Function to update the visual indicators for a specific channel
+function updateChannelIndicators(channelName) {
+  const channelItem = channelListDiv.querySelector(`.channel-item[data-channel="${channelName}"]`);
+  if (!channelItem) return;
+
+  let mentionIndicator = channelItem.querySelector('.mention-indicator');
+  let unreadBadge = channelItem.querySelector('.unread-badge');
+  const state = channelReadStates[channelName] || { unreadCount: 0, hasMention: false };
+
+  // Create indicators if they don't exist
+  if (!mentionIndicator) {
+    mentionIndicator = document.createElement('span');
+    mentionIndicator.classList.add('mention-indicator');
+    channelItem.appendChild(mentionIndicator); // Append to the channel item
+  }
+  if (!unreadBadge) {
+    unreadBadge = document.createElement('span');
+    unreadBadge.classList.add('unread-badge');
+    channelItem.appendChild(unreadBadge); // Append to the channel item
+  }
+
+  // Update visibility and content based on state
+  mentionIndicator.style.display = state.hasMention ? 'inline-block' : 'none';
+  if (state.unreadCount > 0) {
+    unreadBadge.textContent = state.unreadCount > 99 ? '99+' : state.unreadCount;
+    unreadBadge.style.display = 'inline-block';
+  } else {
+    unreadBadge.style.display = 'none';
+  }
+
+  // Add/remove class for general unread state (e.g., bolding channel name)
+  channelItem.classList.toggle('has-unread', state.unreadCount > 0 || state.hasMention);
+}
+
 function renderChannelList() {
   channelListDiv.innerHTML = '';
   availableChannels.forEach((channelName) => {
@@ -292,9 +327,25 @@ function renderChannelList() {
         window.electronAPI.showChannelContextMenu(channelName);
       });
     }
+
+    // Create placeholder spans for indicators (will be filled by updateChannelIndicators)
+    const mentionIndicator = document.createElement('span');
+    mentionIndicator.classList.add('mention-indicator');
+    mentionIndicator.style.display = 'none'; // Initially hidden
+
+    const unreadBadge = document.createElement('span');
+    unreadBadge.classList.add('unread-badge');
+    unreadBadge.style.display = 'none'; // Initially hidden
+
+    channelLink.appendChild(mentionIndicator);
+    channelLink.appendChild(unreadBadge);
+
     channelListDiv.appendChild(channelLink);
+
+    // Update indicators based on current state after adding the element
+    updateChannelIndicators(channelName);
   });
-  updateChannelHighlight();
+  updateChannelHighlight(); // Ensure active channel highlight is correct
 }
 function updateChannelHighlight() {
   document.querySelectorAll('.channel-item').forEach((item) => {
@@ -368,9 +419,28 @@ function renderUserList() {
 }
 
 // --- Message Handling ---
-function addMessage(messageData) {
-  if (messageData.channel !== currentChannel) return;
+function addMessage(messageData, isHistory = false) { // Added isHistory flag
+  const messageChannel = messageData.channel;
   const sender = messageData.sender || 'Unknown';
+  const text = messageData.text || '';
+  const mentionPattern = new RegExp(`@${localUsername}\\b`, 'i'); // Case-insensitive check
+
+  // Update read states for inactive channels ONLY for non-history messages
+  if (!isHistory && messageChannel !== currentChannel) {
+    if (!channelReadStates[messageChannel]) {
+      channelReadStates[messageChannel] = { unreadCount: 0, hasMention: false };
+    }
+    channelReadStates[messageChannel].unreadCount++;
+    if (!channelReadStates[messageChannel].hasMention && mentionPattern.test(text)) {
+      channelReadStates[messageChannel].hasMention = true;
+    }
+    updateChannelIndicators(messageChannel); // Update indicators for the specific channel
+    return; // Don't add the message visually if it's not for the current channel
+  }
+
+  // If message is for the current channel, proceed to add it visually
+  if (messageChannel !== currentChannel) return; // Should not happen if logic above is correct, but safety check
+
   const isConsecutive = sender === lastMessageSender;
   const messageId = messageData._id;
   let messageGroup;
@@ -461,7 +531,8 @@ function addMessage(messageData) {
       // messageGroup.classList.add('mentioned'); // REMOVED: Don't highlight the whole group
       textDiv.classList.add('mentioned'); // ADDED: Highlight just this message text div
       // Highlight the specific mention text and make it clickable
-      textDiv.innerHTML = messageData.text.replace(
+      // Use the 'text' variable which was already extracted
+      textDiv.innerHTML = text.replace(
          mentionPattern,
          '<span class="mention-highlight" data-username="$1">$&</span>' // Use $& for the full match (@username)
       );
@@ -473,7 +544,7 @@ function addMessage(messageData) {
         });
       });
     } else {
-      textDiv.textContent = messageData.text; // No mentions, just set text
+      textDiv.textContent = text; // No mentions, just set text
     }
   }
 
@@ -495,8 +566,8 @@ function addMessage(messageData) {
 
   const wasNearBottom = isScrolledNearBottom; // Check before adding the message
 
-  // Scroll logic
-  if (sender === localUsername || wasNearBottom) {
+  // Scroll logic - Only apply scroll logic for non-history messages
+  if (!isHistory && (sender === localUsername || wasNearBottom)) {
     // If sent by self OR user was already near bottom, scroll down
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
     isScrolledNearBottom = true; // Ensure state is correct
@@ -508,9 +579,14 @@ function addMessage(messageData) {
   }
 }
 
-function scrollToBottom() {
+function scrollToBottom(forceClearIndicators = false) { // Added forceClearIndicators
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
   hideNewMessagesBar();
+  // Also clear indicators for the current channel when explicitly scrolling to bottom
+  if (forceClearIndicators && channelReadStates[currentChannel]) {
+    channelReadStates[currentChannel] = { unreadCount: 0, hasMention: false };
+    updateChannelIndicators(currentChannel);
+  }
 }
 
 function showNewMessagesBar() {
@@ -530,6 +606,7 @@ function clearMessages() {
   lastMessageSender = null;
   isScrolledNearBottom = true; // Reset scroll state
   hideNewMessagesBar(); // Hide bar on clear
+  // Don't clear read states here, only when switching or scrolling
 }
 function handleEditMessage(messageId) {
   const messageTextDiv = messagesDiv.querySelector(`.message-text[data-message-id="${messageId}"]`);
@@ -966,6 +1043,12 @@ messagesDiv.addEventListener('scroll', () => {
 
     if (isScrolledNearBottom) {
       hideNewMessagesBar(); // Hide bar if user scrolls down manually
+      // Clear indicators for the current channel when scrolled to bottom
+      if (channelReadStates[currentChannel] && (channelReadStates[currentChannel].unreadCount > 0 || channelReadStates[currentChannel].hasMention)) {
+        console.log(`Clearing indicators for ${currentChannel} due to scroll bottom.`);
+        channelReadStates[currentChannel] = { unreadCount: 0, hasMention: false };
+        updateChannelIndicators(currentChannel);
+      }
     }
     // console.log('Scroll Pos:', messagesDiv.scrollTop, 'Near Bottom:', isScrolledNearBottom); // Debugging
   }, 100); // Debounce scroll checks
@@ -1018,17 +1101,49 @@ window.electronAPI.onChannelList((response) => {
   renderChannelList();
 });
 window.electronAPI.onMessageReceived((messageData) => {
-  addMessage(messageData);
+  addMessage(messageData, false); // Pass false for isHistory
 });
 window.electronAPI.onLoadHistory((data) => {
   console.log(`Loading history for channel: ${data.channel}`);
+  const previousChannel = currentChannel;
   currentChannel = data.channel;
   updateChannelHighlight();
   clearMessages(); // Resets scroll state and hides bar
-  data.payload.forEach((msg) => addMessage(msg));
-  // Ensure initial scroll to bottom after history load
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
-  isScrolledNearBottom = true; // Explicitly set after load
+
+  // Clear indicators for the new channel *before* loading history
+  // This prevents briefly showing indicators before they are cleared by scroll check
+  if (channelReadStates[currentChannel]) {
+      channelReadStates[currentChannel] = { unreadCount: 0, hasMention: false };
+      updateChannelIndicators(currentChannel); // Update UI immediately
+  }
+
+  data.payload.forEach((msg) => addMessage(msg, true)); // Pass true for isHistory
+
+  // Check scroll position *after* loading history and potentially clear again
+  // Use setTimeout to allow DOM updates to settle before checking scrollHeight
+  setTimeout(() => {
+    const threshold = 10; // Small threshold for initial load
+    const position = messagesDiv.scrollTop + messagesDiv.clientHeight;
+    const height = messagesDiv.scrollHeight;
+    isScrolledNearBottom = position >= height - threshold;
+
+    console.log(`History loaded for ${currentChannel}. ScrollTop: ${messagesDiv.scrollTop}, ClientHeight: ${messagesDiv.clientHeight}, ScrollHeight: ${height}, NearBottom: ${isScrolledNearBottom}`);
+
+    if (!isScrolledNearBottom && channelReadStates[currentChannel]) {
+        // This case shouldn't happen often if cleared before load, but as a fallback
+        console.warn(`Indicators for ${currentChannel} might still be present despite history load.`);
+    } else if (isScrolledNearBottom && channelReadStates[currentChannel]) {
+        // If somehow indicators were set during history load (shouldn't happen), clear them now
+        channelReadStates[currentChannel] = { unreadCount: 0, hasMention: false };
+        updateChannelIndicators(currentChannel);
+    }
+
+    // Ensure scroll is actually at the bottom if it should be
+    if (isScrolledNearBottom) {
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+  }, 50); // Short delay
+
 });
 window.electronAPI.onStatusUpdate((status) => {
   updateStatus(status);

@@ -196,6 +196,8 @@ body {
   cursor: pointer;
   font-weight: 500;
   text-decoration: none;
+  position: relative; /* Needed for absolute positioning of indicators */
+  gap: 4px; /* Add small gap between text and indicators */
 }
 .channel-item::before {
   content: '#';
@@ -217,6 +219,49 @@ body {
 .channel-item.active::before {
   color: #fff;
 }
+
+/* Styles for unread/mention indicators */
+.channel-item .mention-indicator {
+  background-color: #f04747; /* Red color for mention */
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block; /* Initially hidden via JS */
+  margin-left: auto; /* Push to the right */
+  flex-shrink: 0;
+}
+
+.channel-item .unread-badge {
+  background-color: #f04747; /* Red color for badge */
+  color: #fff;
+  font-size: 0.7em;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 10px;
+  line-height: 1;
+  display: inline-block; /* Initially hidden via JS */
+  margin-left: 4px; /* Space from mention indicator or channel name */
+  flex-shrink: 0;
+}
+
+/* Style for channel item when it has unread messages or mentions */
+.channel-item.has-unread {
+  color: #fff; /* Make text white */
+  font-weight: 600; /* Make text bold */
+}
+.channel-item.has-unread:not(.active) {
+   background-color: transparent; /* Don't apply hover background if unread but not active */
+}
+.channel-item.has-unread:not(.active):hover {
+   background-color: #3a3c43; /* Apply hover background on actual hover */
+}
+.channel-item.has-unread::before {
+  color: #b9bbbe; /* Keep hash grey unless active */
+}
+.channel-item.active.has-unread::before {
+  color: #fff; /* Ensure hash is white when active and unread */
+}
+
 #user-area {
   padding: 10px 16px;
   background-color: #292b2f;
