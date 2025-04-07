@@ -223,6 +223,43 @@
       </div>
     </div>
 
+    <!-- Weather City Input Modal (New) -->
+    <div
+      id="weather-modal-backdrop"
+      class="modal-backdrop"
+      style="display: none"
+    >
+      <div id="weather-modal" class="modal">
+        <button id="close-weather-modal" class="close-button">
+          &times;
+        </button>
+        <h3>Send Weather</h3>
+        <div class="input-group">
+          <label for="weather-city-input">City Name</label>
+          <input
+            type="text"
+            id="weather-city-input"
+            name="weather-city-input"
+            placeholder="e.g., London"
+          />
+        </div>
+        <div class="modal-actions">
+          <button
+            id="cancel-weather-button"
+            class="modal-button secondary"
+          >
+            Cancel
+          </button>
+          <button
+            id="submit-weather-button"
+            class="modal-button primary"
+          >
+            Send Weather
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script src="renderer.js"></script>
   </body>
 </html>

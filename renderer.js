@@ -79,6 +79,12 @@ const attachmentInput = document.getElementById('attachment-input'); // Hidden f
 const newMessagesBar = document.getElementById('new-messages-bar');
 const mentionSuggestionsDiv = document.getElementById('mention-suggestions'); // Added
 const appVersionSpan = document.getElementById('app-version'); // Added
+// Weather Modal Elements (New)
+const weatherModalBackdrop = document.getElementById('weather-modal-backdrop');
+const closeWeatherModalButton = document.getElementById('close-weather-modal');
+const weatherCityInput = document.getElementById('weather-city-input');
+const cancelWeatherButton = document.getElementById('cancel-weather-button');
+const submitWeatherButton = document.getElementById('submit-weather-button');
 
 // --- State ---
 let localUsername = '';
@@ -276,6 +282,34 @@ profilePictureInput.addEventListener('change', (event) => {
   }
   event.target.value = null;
 });
+
+// Weather Modal Logic (New)
+function showWeatherModal() {
+  weatherCityInput.value = ''; // Clear previous input
+  weatherModalBackdrop.style.display = 'flex';
+  weatherCityInput.focus();
+}
+function hideWeatherModal() {
+  weatherModalBackdrop.style.display = 'none';
+}
+closeWeatherModalButton.addEventListener('click', hideWeatherModal);
+cancelWeatherButton.addEventListener('click', hideWeatherModal);
+weatherModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === weatherModalBackdrop) hideWeatherModal();
+});
+submitWeatherButton.addEventListener('click', () => {
+  const cityName = weatherCityInput.value.trim();
+  if (cityName) {
+    window.electronAPI.sendWeatherMessage(cityName);
+    hideWeatherModal();
+  } else {
+    alert('Please enter a city name.');
+  }
+});
+weatherCityInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') submitWeatherButton.click();
+});
+
 
 // --- Channel UI ---
 // Function to load persistent states from main process
@@ -1140,12 +1174,8 @@ window.electronAPI.onTriggerFileUpload(() => {
 // Listen for main process telling us to prompt for a city for weather
 window.electronAPI.onPromptSendWeather(() => {
   console.log('[Renderer] Received prompt-send-weather from main.');
-  const cityName = prompt('Enter city name to get weather for:');
-  if (cityName && cityName.trim().length > 0) {
-    window.electronAPI.sendWeatherMessage(cityName.trim());
-  } else if (cityName !== null) { // Only show error if user didn't press Cancel
-    alert('City name cannot be empty.');
-  }
+  // Instead of prompt(), show the modal
+  showWeatherModal();
 });
 
 window.electronAPI.onSignupResponse((response) => {

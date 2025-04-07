@@ -94,7 +94,7 @@
 *   **Code Quality:** ESLint/Prettier configured and applied.
 *   **Attachments:**
     *   **File Uploads (S3):** '+' button now shows a context menu. Selecting "Upload File..." triggers a hidden file input. Reads file (<=10MB), sends via IPC/WebSocket. Server uploads to S3, saves URL. Client displays images/links.
-    *   **Weather:** Selecting "Send Weather..." from attachment menu prompts user for city name. Main process fetches data from OpenWeatherMap API (using `axios` and API key), formats it, and sends as a chat message.
+    *   **Weather:** Selecting "Send Weather..." from attachment menu opens a modal dialog prompting the user for a city name. Main process fetches data from OpenWeatherMap API (using `axios` and API key), formats it, and sends as a chat message.
 *   **Mentions:**
     *   Client: `@` triggers suggestion popup, filters users, allows keyboard navigation (Arrows/Enter/Tab/Esc) and selection.
     *   Client: Messages mentioning the user (`@localUsername`) have the specific message text highlighted with a subtle background/border.
@@ -105,12 +105,13 @@
 *   **Auto-Updates:** Basic implementation added using `electron-updater`. Checks for updates on startup and notifies the user if one is available and downloaded. Requires publishing builds to GitHub Releases.
 *   **Build Process:** Uses `electron-builder` (NSIS target). Configured to publish to GitHub Releases for auto-updates.
 
-## IV. Current State & Last Actions (as of 2025-04-07 ~12:35 AM PDT):
+## IV. Current State & Last Actions (as of 2025-04-07 ~12:46 AM PDT):
 
+*   **Fixed:** Weather feature now uses a custom modal dialog for city input instead of the unsupported `prompt()`.
 *   **Fixed:** Channel names in sidebar are now correctly left-aligned.
 *   **Added:** Attachment button ('+') now shows a context menu with options:
     *   "Upload File..." (triggers existing file upload flow).
-    *   "Send Weather..." (prompts for city, fetches from OpenWeatherMap, sends as message).
+    *   "Send Weather..." (opens modal, fetches from OpenWeatherMap, sends as message).
 *   **Added:** `axios` dependency for weather API calls.
 *   **Configured:** OpenWeatherMap API key added to `main.js`.
 *   **Previous:** All features listed above were implemented, code pushed (commit `7c17511`), app rebuilt. S3 bucket confirmed. `electron-store` and `electron-updater` added.
