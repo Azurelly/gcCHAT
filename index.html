@@ -207,7 +207,45 @@
           ></textarea>
           <small>Max 190 characters</small>
         </div>
-        <!-- Add other settings here later -->
+        <!-- Riot Account Linking Section -->
+        <div class="settings-riot-linking-area" style="margin-top: 20px; border-top: 1px solid #40444b; padding-top: 20px;">
+          <label style="display: block; margin-bottom: 10px; font-weight: 600; color: #b9bbbe; font-size: 0.8em; text-transform: uppercase;">Link Riot Account</label>
+          <div id="riot-link-status" style="font-size: 0.85em; margin-bottom: 10px; color: #8e9297;">Status: Not Linked</div>
+          <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+            <div class="input-group" style="flex-grow: 1; margin-bottom: 0;">
+              <label for="settings-riot-gamename" style="font-size: 0.75em;">Game Name</label>
+              <input type="text" id="settings-riot-gamename" placeholder="YourGameName" style="background-color: #202225; color: #dcddde; border: 1px solid #202225; border-radius: 4px; padding: 8px; font-size: 0.9em;">
+            </div>
+            <div class="input-group" style="flex-basis: 80px; margin-bottom: 0;">
+              <label for="settings-riot-tagline" style="font-size: 0.75em;">Tag Line</label>
+              <input type="text" id="settings-riot-tagline" placeholder="TAG" style="background-color: #202225; color: #dcddde; border: 1px solid #202225; border-radius: 4px; padding: 8px; font-size: 0.9em;">
+            </div>
+          </div>
+          <div class="input-group" style="margin-bottom: 15px;">
+             <label for="settings-riot-region" style="font-size: 0.75em;">Region</label>
+             <select id="settings-riot-region" style="width: 100%; background-color: #202225; color: #dcddde; border: 1px solid #202225; border-radius: 4px; padding: 8px; font-size: 0.9em;">
+                <option value="na1">North America (NA1)</option>
+                <option value="euw1">Europe West (EUW1)</option>
+                <option value="eun1">Europe Nordic & East (EUN1)</option>
+                <option value="kr">Korea (KR)</option>
+                <option value="br1">Brazil (BR1)</option>
+                <option value="la1">Latin America North (LA1)</option>
+                <option value="la2">Latin America South (LA2)</option>
+                <option value="oc1">Oceania (OC1)</option>
+                <option value="ru">Russia (RU)</option>
+                <option value="tr1">Turkey (TR1)</option>
+                <option value="jp1">Japan (JP1)</option>
+                <option value="ph2">Philippines (PH2)</option>
+                <option value="sg2">Singapore (SG2)</option>
+                <option value="th2">Thailand (TH2)</option>
+                <option value="tw2">Taiwan (TW2)</option>
+                <option value="vn2">Vietnam (VN2)</option>
+             </select>
+          </div>
+          <button id="link-riot-account-button" class="modal-button secondary" style="width: auto; padding: 8px 12px; font-size: 0.85em;">Link Account</button>
+          <div id="riot-link-error" style="color: #f04747; font-size: 0.8em; margin-top: 8px; display: none;"></div>
+        </div>
+        <!-- End Riot Section -->
         <div class="modal-actions">
           <button
             id="cancel-profile-settings-button"

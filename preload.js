@@ -74,6 +74,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendWeatherMessage: (cityName) => ipcRenderer.send('send-weather-message', cityName),
   onPromptSendWeather: (callback) => // Listener for main telling renderer to ask for city
     ipcRenderer.on('prompt-send-weather', (_event) => callback()),
+  // Riot Account Linking
+  linkRiotAccount: (linkData) => ipcRenderer.send('link-riot-account', linkData), // { gameName, tagLine, platformId }
+  onLinkRiotAccountResponse: (callback) => // Listener for success/failure of linking
+    ipcRenderer.on('link-riot-account-response', (_event, response) => callback(response)),
   onPromptCreateChannel: (callback) =>
     ipcRenderer.on('prompt-create-channel', (_event) => callback()),
   onConfirmDeleteChannel: (callback) =>
@@ -127,7 +131,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('log-message'); // Add cleanup for log listener
     ipcRenderer.removeAllListeners('trigger-file-upload'); // Add cleanup for attachment trigger
     ipcRenderer.removeAllListeners('prompt-send-weather'); // Add cleanup for weather prompt
-    // No listener cleanup needed for 'show-notification', 'update-channel-state', 'showAttachmentMenu', 'sendWeatherMessage' (send)
+    ipcRenderer.removeAllListeners('link-riot-account-response'); // Add cleanup for Riot link response
+    // No listener cleanup needed for 'show-notification', 'update-channel-state', 'showAttachmentMenu', 'sendWeatherMessage', 'linkRiotAccount' (send)
     // No listener cleanup needed for 'get-channel-states' (invoke)
     // Add cleanup for any potential future listeners related to attachments
     // ipcRenderer.removeAllListeners('file-upload-progress');

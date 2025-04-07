@@ -79,12 +79,20 @@ const attachmentInput = document.getElementById('attachment-input'); // Hidden f
 const newMessagesBar = document.getElementById('new-messages-bar');
 const mentionSuggestionsDiv = document.getElementById('mention-suggestions'); // Added
 const appVersionSpan = document.getElementById('app-version'); // Added
-// Weather Modal Elements (New)
+// Weather Modal Elements
 const weatherModalBackdrop = document.getElementById('weather-modal-backdrop');
 const closeWeatherModalButton = document.getElementById('close-weather-modal');
 const weatherCityInput = document.getElementById('weather-city-input');
 const cancelWeatherButton = document.getElementById('cancel-weather-button');
 const submitWeatherButton = document.getElementById('submit-weather-button');
+// Riot Linking Elements (New)
+const riotLinkStatusDiv = document.getElementById('riot-link-status');
+const riotGameNameInput = document.getElementById('settings-riot-gamename');
+const riotTagLineInput = document.getElementById('settings-riot-tagline');
+const riotRegionSelect = document.getElementById('settings-riot-region');
+const linkRiotAccountButton = document.getElementById('link-riot-account-button');
+const riotLinkErrorDiv = document.getElementById('riot-link-error');
+
 
 // --- State ---
 let localUsername = '';
@@ -94,12 +102,12 @@ let currentChannel = 'general';
 let availableChannels = ['general'];
 let lastMessageSender = null;
 let channelToDelete = null;
-let allUserDetails = []; // Store { username, profilePicture }
+let allUserDetails = []; // Store { username, profilePicture, riotHighestMasteryChampionName }
 let onlineUsers = []; // Store just usernames
 let partyModeActive = false;
 let typingTimeout = null;
 let currentlyTypingUsers = [];
-let currentProfileData = null; // Store own fetched profile data
+let currentProfileData = null; // Store own fetched profile data including Riot info
 let isScrolledNearBottom = true;
 let newMessagesCount = 0;
 let scrollTimeout = null;
@@ -163,6 +171,34 @@ function showProfileModal(profile) {
     profileModalAvatar.style.backgroundImage = '';
     profileModalAvatar.style.backgroundColor = getAvatarColor(profile.username);
   }
+  // Display Riot Mastery in profile modal
+  const masteryDiv = document.getElementById('profile-modal-mastery'); // Need to add this ID to HTML if not present
+  if (masteryDiv) masteryDiv.remove(); // Remove old one if exists
+
+  if (profile.riotHighestMasteryChampionName) {
+      const newMasteryDiv = document.createElement('div');
+      newMasteryDiv.id = 'profile-modal-mastery';
+      newMasteryDiv.style.marginTop = '15px';
+      newMasteryDiv.style.paddingTop = '15px';
+      newMasteryDiv.style.borderTop = '1px solid #40444b';
+
+      const masteryTitle = document.createElement('h4');
+      masteryTitle.textContent = 'Highest Mastery';
+      masteryTitle.style.fontSize = '0.8em';
+      masteryTitle.style.color = '#b9bbbe';
+      masteryTitle.style.textTransform = 'uppercase';
+      masteryTitle.style.fontWeight = '600';
+      masteryTitle.style.marginBottom = '8px';
+
+      const masteryText = document.createElement('p');
+      masteryText.textContent = `${profile.riotHighestMasteryChampionName} (${profile.riotHighestMasteryPoints?.toLocaleString() || 'N/A'} points)`;
+      masteryText.style.color = '#dcddde';
+
+      newMasteryDiv.appendChild(masteryTitle);
+      newMasteryDiv.appendChild(masteryText);
+      profileModal.querySelector('.profile-body').appendChild(newMasteryDiv);
+  }
+
   profileModalBackdrop.style.display = 'flex';
 }
 function hideProfileModal() {
@@ -172,6 +208,9 @@ function hideProfileModal() {
   profileModalAvatar.textContent = '?';
   profileModalAvatar.style.backgroundImage = '';
   profileModalAvatar.style.backgroundColor = '#7289da';
+  // Remove mastery info on close
+  const masteryDiv = document.getElementById('profile-modal-mastery');
+  if (masteryDiv) masteryDiv.remove();
 }
 closeProfileModalButton.addEventListener('click', hideProfileModal);
 profileModalBackdrop.addEventListener('click', (e) => {
@@ -227,8 +266,11 @@ submitDeleteChannelButton.addEventListener('click', () => {
 
 // Settings Modal Logic
 function showProfileSettingsModal() {
-  window.electronAPI.requestOwnProfile();
+  window.electronAPI.requestOwnProfile(); // Fetches latest data including Riot info
   profileSettingsModalBackdrop.style.display = 'flex';
+  // Clear Riot link error on open
+  riotLinkErrorDiv.textContent = '';
+  riotLinkErrorDiv.style.display = 'none';
 }
 function hideProfileSettingsModal() {
   profileSettingsModalBackdrop.style.display = 'none';
@@ -250,6 +292,7 @@ profileSettingsModalBackdrop.addEventListener('click', (e) => {
 saveProfileSettingsButton.addEventListener('click', () => {
   const newAboutMe = settingsAboutMeInput.value.trim();
   window.electronAPI.saveAboutMe(newAboutMe);
+  // Note: Riot linking is handled by its own button, not the main save button
   hideProfileSettingsModal();
 });
 
@@ -283,7 +326,28 @@ profilePictureInput.addEventListener('change', (event) => {
   event.target.value = null;
 });
 
-// Weather Modal Logic (New)
+// Riot Linking Logic (New)
+linkRiotAccountButton.addEventListener('click', () => {
+    const gameName = riotGameNameInput.value.trim();
+    const tagLine = riotTagLineInput.value.trim();
+    const platformId = riotRegionSelect.value;
+
+    riotLinkErrorDiv.textContent = ''; // Clear previous errors
+    riotLinkErrorDiv.style.display = 'none';
+
+    if (!gameName || !tagLine || !platformId) {
+        riotLinkErrorDiv.textContent = 'Please fill in Game Name, Tag Line, and Region.';
+        riotLinkErrorDiv.style.display = 'block';
+        return;
+    }
+
+    linkRiotAccountButton.textContent = 'Linking...';
+    linkRiotAccountButton.disabled = true;
+
+    window.electronAPI.linkRiotAccount({ gameName, tagLine, platformId });
+});
+
+// Weather Modal Logic
 function showWeatherModal() {
   weatherCityInput.value = ''; // Clear previous input
   weatherModalBackdrop.style.display = 'flex';
@@ -578,6 +642,16 @@ function addMessage(messageData, isHistory = false) { // Added isHistory flag
     senderSpan.textContent = sender;
     senderSpan.dataset.username = sender;
     senderSpan.addEventListener('click', () => window.electronAPI.getUserProfile(sender));
+
+    // Add Riot Mastery Tag next to sender name
+    if (senderDetails?.riotHighestMasteryChampionName) {
+        const masteryTag = document.createElement('span');
+        masteryTag.classList.add('riot-mastery-tag'); // Add class for styling
+        masteryTag.textContent = `(${senderDetails.riotHighestMasteryChampionName} Main)`;
+        masteryTag.title = `Highest Mastery: ${senderDetails.riotHighestMasteryChampionName}`;
+        senderSpan.appendChild(masteryTag); // Append tag to sender span
+    }
+
     const timestampSpan = document.createElement('span');
     timestampSpan.classList.add('timestamp');
     timestampSpan.textContent = messageData.timestamp ? new Date(messageData.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
@@ -1087,14 +1161,14 @@ messageInput.addEventListener('blur', () => {
 
 userSettingsButton.addEventListener('click', showProfileSettingsModal);
 
-// MODIFIED: Attachment button now shows context menu
+// Attachment button shows context menu
 attachmentButton.addEventListener('click', () => {
   if (!attachmentButton.disabled) {
     window.electronAPI.showAttachmentMenu(); // Call main process to show menu
   }
 });
 
-// Listener for the hidden file input (remains the same)
+// Listener for the hidden file input
 attachmentInput.addEventListener('change', (event) => {
   const files = event.target.files;
   if (files.length > 0) {
@@ -1174,9 +1248,35 @@ window.electronAPI.onTriggerFileUpload(() => {
 // Listen for main process telling us to prompt for a city for weather
 window.electronAPI.onPromptSendWeather(() => {
   console.log('[Renderer] Received prompt-send-weather from main.');
-  // Instead of prompt(), show the modal
+  // Show the modal instead of prompt()
   showWeatherModal();
 });
+
+// Listen for Riot account linking response
+window.electronAPI.onLinkRiotAccountResponse((response) => {
+    linkRiotAccountButton.textContent = 'Link Account';
+    linkRiotAccountButton.disabled = false;
+    if (response.success) {
+        riotLinkStatusDiv.textContent = `Status: Linked as ${response.profile.riotGameName}#${response.profile.riotTagLine} (${response.profile.riotPlatformId.toUpperCase()})`;
+        riotLinkStatusDiv.style.color = '#43b581'; // Green for success
+        riotLinkErrorDiv.style.display = 'none';
+        // Update local profile data cache
+        if (currentProfileData) {
+            currentProfileData.riotGameName = response.profile.riotGameName;
+            currentProfileData.riotTagLine = response.profile.riotTagLine;
+            currentProfileData.riotPlatformId = response.profile.riotPlatformId;
+            currentProfileData.riotHighestMasteryChampionName = response.profile.riotHighestMasteryChampionName;
+            currentProfileData.riotHighestMasteryPoints = response.profile.riotHighestMasteryPoints;
+        }
+        // Optionally clear inputs or disable them after successful link? For now, leave them.
+    } else {
+        riotLinkErrorDiv.textContent = `Error: ${response.error || 'Linking failed.'}`;
+        riotLinkErrorDiv.style.display = 'block';
+        riotLinkStatusDiv.textContent = 'Status: Not Linked';
+        riotLinkStatusDiv.style.color = '#8e9297'; // Reset color
+    }
+});
+
 
 window.electronAPI.onSignupResponse((response) => {
   console.log('Signup Response:', response);
@@ -1193,15 +1293,21 @@ window.electronAPI.onLoginResponse((response) => {
     localUsername = response.username;
     isAdmin = response.isAdmin || false;
     currentChannel = 'general';
+    // Store profile data, including Riot info
     currentProfileData = {
        username: response.username,
        isAdmin: response.isAdmin,
        profilePicture: response.profilePicture,
-       aboutMe: response.aboutMe
+       aboutMe: response.aboutMe,
+       riotGameName: response.riotGameName,
+       riotTagLine: response.riotTagLine,
+       riotPlatformId: response.riotPlatformId,
+       riotHighestMasteryChampionName: response.riotHighestMasteryChampionName,
+       riotHighestMasteryPoints: response.riotHighestMasteryPoints,
     };
     hideAuthError();
     showChatView();
-    updateStatus({
+    updateStatus({ // Pass relevant parts to updateStatus
        connected: true,
        username: localUsername,
        isAdmin: isAdmin,
@@ -1291,7 +1397,15 @@ window.electronAPI.onEditMessagePrompt((messageId) => {
 });
 window.electronAPI.onUserListUpdate((payload) => {
   console.log('Received user list update:', payload);
-  allUserDetails = payload.all || []; // Store detailed user list
+  // Update allUserDetails with potential new mastery info
+  allUserDetails = payload.all.map(detail => {
+      const existing = allUserDetails.find(u => u.username === detail.username);
+      return {
+          ...detail,
+          // Keep existing mastery name if present, otherwise fetch/update later if needed
+          riotHighestMasteryChampionName: existing?.riotHighestMasteryChampionName || null
+      };
+  });
   onlineUsers = payload.online || [];
   renderUserList(); // Re-render user list
 });
@@ -1307,7 +1421,7 @@ window.electronAPI.onTypingUpdate((payload) => {
 });
 window.electronAPI.onOwnProfileResponse((profile) => {
   if (profile) {
-    currentProfileData = profile;
+    currentProfileData = profile; // Update local cache with full profile data
     settingsAboutMeInput.value = profile.aboutMe || '';
     if (profile.profilePicture) {
       settingsAvatarPreview.style.backgroundImage = `url('${profile.profilePicture}')`;
@@ -1317,43 +1431,90 @@ window.electronAPI.onOwnProfileResponse((profile) => {
       settingsAvatarPreview.style.backgroundImage = '';
       settingsAvatarPreview.style.backgroundColor = getAvatarColor(localUsername);
     }
+    // Populate Riot linking section
+    if (profile.riotGameName && profile.riotTagLine) {
+        riotLinkStatusDiv.textContent = `Status: Linked as ${profile.riotGameName}#${profile.riotTagLine} (${profile.riotPlatformId?.toUpperCase() || 'N/A'})`;
+        riotLinkStatusDiv.style.color = '#43b581'; // Green
+        riotGameNameInput.value = profile.riotGameName;
+        riotTagLineInput.value = profile.riotTagLine;
+        riotRegionSelect.value = profile.riotPlatformId || 'na1'; // Default if somehow missing
+    } else {
+        riotLinkStatusDiv.textContent = 'Status: Not Linked';
+        riotLinkStatusDiv.style.color = '#8e9297'; // Default grey
+        riotGameNameInput.value = '';
+        riotTagLineInput.value = '';
+        riotRegionSelect.value = 'na1'; // Default region
+    }
+    riotLinkErrorDiv.textContent = '';
+    riotLinkErrorDiv.style.display = 'none';
+    linkRiotAccountButton.textContent = 'Link Account';
+    linkRiotAccountButton.disabled = false;
+
     settingsAboutMeInput.disabled = false;
     saveProfileSettingsButton.disabled = false;
-    settingsAboutMeInput.focus();
+    // settingsAboutMeInput.focus(); // Don't focus about me by default anymore
   } else {
     console.error('Failed to load own profile data for settings.');
     settingsAboutMeInput.value = 'Error loading profile.';
     settingsAboutMeInput.disabled = true;
     saveProfileSettingsButton.disabled = true;
+    // Disable Riot linking too
+    riotGameNameInput.disabled = true;
+    riotTagLineInput.disabled = true;
+    riotRegionSelect.disabled = true;
+    linkRiotAccountButton.disabled = true;
   }
 });
 
-// Listener for profile updates (e.g., picture change)
+// Listener for profile updates (e.g., picture change, potentially Riot link in future)
 window.electronAPI.onProfileUpdated((payload) => {
    console.log('Profile updated:', payload);
    // Update local cache for all users
    const userIndex = allUserDetails.findIndex(u => u.username === payload.username);
    if (userIndex !== -1) {
-      allUserDetails[userIndex].profilePicture = payload.profilePicture;
+      // Update only the fields present in the payload
+      if (payload.profilePicture !== undefined) {
+          allUserDetails[userIndex].profilePicture = payload.profilePicture;
+      }
+      // Add checks for Riot data if we broadcast it on link
+      // if (payload.riotHighestMasteryChampionName !== undefined) {
+      //    allUserDetails[userIndex].riotHighestMasteryChampionName = payload.riotHighestMasteryChampionName;
+      // }
    }
    // Update own profile data if it's us
    if (payload.username === localUsername) {
-      if (currentProfileData) currentProfileData.profilePicture = payload.profilePicture;
-      // Update user area avatar immediately
-      updateStatus({ connected: true, username: localUsername, profilePicture: payload.profilePicture });
+      if (currentProfileData) {
+          if (payload.profilePicture !== undefined) {
+              currentProfileData.profilePicture = payload.profilePicture;
+          }
+          // Update Riot data if broadcasted
+      }
+      // Update user area avatar immediately if PFP changed
+      if (payload.profilePicture !== undefined) {
+          updateStatus({ connected: true, username: localUsername, profilePicture: payload.profilePicture });
+      }
    }
-   // Re-render lists/messages to show new avatar
+   // Re-render lists/messages to show new avatar/tags
    renderUserList();
-   // Re-render messages currently in view to update avatar
-   document.querySelectorAll(`.message-group[data-sender="${payload.username}"] .message-avatar`).forEach(avatarDiv => {
-       if (payload.profilePicture) {
-           avatarDiv.style.backgroundImage = `url('${payload.profilePicture}')`;
-           avatarDiv.textContent = '';
-       } else {
-           avatarDiv.textContent = payload.username.charAt(0)?.toUpperCase() || '?';
-           avatarDiv.style.backgroundImage = '';
-           avatarDiv.style.backgroundColor = getAvatarColor(payload.username);
+   // Re-render messages currently in view to update avatar/tags
+   document.querySelectorAll(`.message-group[data-sender="${payload.username}"]`).forEach(messageGroup => {
+       const avatarDiv = messageGroup.querySelector('.message-avatar');
+       const senderSpan = messageGroup.querySelector('.sender');
+
+       // Update Avatar
+       if (avatarDiv && payload.profilePicture !== undefined) {
+           if (payload.profilePicture) {
+               avatarDiv.style.backgroundImage = `url('${payload.profilePicture}')`;
+               avatarDiv.textContent = '';
+           } else {
+               avatarDiv.textContent = payload.username.charAt(0)?.toUpperCase() || '?';
+               avatarDiv.style.backgroundImage = '';
+               avatarDiv.style.backgroundColor = getAvatarColor(payload.username);
+           }
        }
+       // Update/Add/Remove Mastery Tag (if we broadcast this info)
+       // This requires the broadcast payload to include mastery info, which it currently doesn't
+       // For now, mastery tag only appears on initial load/profile view
    });
 });
 
@@ -1367,7 +1528,7 @@ window.addEventListener('beforeunload', () => {
 // Initialize view
 showAuthView(true);
 
-console.log('renderer.js updated with profile picture display logic');
+console.log('renderer.js updated with Riot linking UI logic');
 
 // --- Utility Functions (Avatar Color) ---
 function simpleHash(str) {

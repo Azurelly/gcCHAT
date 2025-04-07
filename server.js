@@ -1,1018 +1,944 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import path from 'path'; // Keep for potential future use, though not strictly needed now
-import { v4 as uuidv4 } from 'uuid';
-import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import bcrypt from 'bcrypt';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'; // Added AWS S3 Client
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { v4 as uuidv4 } from 'uuid';
+import axios from 'axios'; // Import axios
 
 // --- Configuration ---
 const PORT = process.env.PORT || 3000;
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  'mongodb+srv://Azurely:po2yOHjRLNJ4Gapv@gcchat.aqgwni3.mongodb.net/chatApp?retryWrites=true&w=majority&appName=gcCHAT';
+const MONGODB_URI = process.env.MONGODB_URI; // Provided by Render
 const DB_NAME = 'chatApp';
-const MESSAGES_COLLECTION_NAME = 'messages';
-const USERS_COLLECTION_NAME = 'users';
-const CHANNELS_COLLECTION_NAME = 'channels';
 const SALT_ROUNDS = 10;
-const DEFAULT_CHANNEL = 'general';
-const TYPING_TIMEOUT_MS = 3000;
-const MAX_DATA_URL_LENGTH = 1.5 * 1024 * 1024;
-const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10MB limit
-
-// AWS S3 Configuration (Read from Environment Variables)
-const AWS_REGION = process.env.AWS_REGION || 'us-west-1'; // Default to user-provided region
-const AWS_S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || 'gcchat-uploads-unique'; // Updated Default
-const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID; // Must be set in environment
-const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY; // Must be set in environment
+// AWS S3 Config (Ensure these are set on Render)
+const S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || 'gcchat-uploads-unique'; // Default if not set
+const S3_REGION = process.env.AWS_REGION || 'us-west-1'; // Default if not set
+const s3Client = new S3Client({ region: S3_REGION });
+// Riot API Config
+const RIOT_API_KEY = process.env.RIOT_API_KEY || 'RGAPI-94226430-0b87-459a-a00f-56580bdcebc8'; // TODO: Move to env var on Render!
+const RIOT_REGION_MAP = { // Platform to Regional routing
+  br1: 'americas',
+  la1: 'americas',
+  la2: 'americas',
+  na1: 'americas',
+  eun1: 'europe',
+  euw1: 'europe',
+  tr1: 'europe',
+  ru: 'europe',
+  jp1: 'asia',
+  kr: 'asia',
+  oc1: 'sea',
+  ph2: 'sea',
+  sg2: 'sea',
+  th2: 'sea',
+  tw2: 'sea',
+  vn2: 'sea',
+};
 
 // --- State ---
-let clients = new Map(); // ws -> { username, currentChannel, isAdmin, partyMode }
-let onlineUsers = new Map(); // username -> { ws, currentChannel, isAdmin }
 let db;
-let messagesCollection;
 let usersCollection;
+let messagesCollection;
 let channelsCollection;
-let availableChannels = [DEFAULT_CHANNEL];
-let typingUsers = new Map();
-let s3Client; // S3 Client instance
+const clients = new Map(); // Map<WebSocket, {username: string, currentChannel: string, isAdmin: boolean, partyMode: boolean}>
+const onlineUsers = new Map(); // Map<username, {isAdmin: boolean, partyMode: boolean}>
+const userTyping = new Map(); // Map<username, { channel: string, timeout: NodeJS.Timeout }>
+let championData = {}; // To store champion ID -> name mapping
 
-// --- AWS S3 Client Initialization ---
-function initializeS3Client() {
-  if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY || !AWS_S3_BUCKET_NAME || !AWS_REGION) {
-    console.warn(
-      '[Server] WARNING: AWS S3 environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_BUCKET_NAME, AWS_REGION) are not fully configured. File uploads will fail.'
-    );
-    s3Client = null; // Ensure client is null if not configured
-    return;
-  }
-  try {
-    s3Client = new S3Client({
-      region: AWS_REGION,
-      credentials: {
-        accessKeyId: AWS_ACCESS_KEY_ID,
-        secretAccessKey: AWS_SECRET_ACCESS_KEY,
-      },
-    });
-    console.log(`[Server] AWS S3 Client initialized for region ${AWS_REGION} and bucket ${AWS_S3_BUCKET_NAME}`);
-  } catch (error) {
-    console.error('[Server] Failed to initialize AWS S3 Client:', error);
-    s3Client = null;
-  }
-}
-
-// --- MongoDB Connection ---
+// --- Database Connection ---
 async function connectDB() {
-  if (!MONGODB_URI || MONGODB_URI.includes('<') || MONGODB_URI.includes('>')) {
-    console.error(
-      '[Server] ERROR: MongoDB connection string is missing, invalid, or contains a placeholder password.'
-    );
+  if (!MONGODB_URI) {
+    console.error('Error: MONGODB_URI environment variable is not set.');
     process.exit(1);
   }
   try {
-    const client = new MongoClient(MONGODB_URI, {
-      serverApi: {
-        version: ServerApiVersion.v1,
-        strict: true,
-        deprecationErrors: true,
-      },
-    });
+    const client = new MongoClient(MONGODB_URI);
     await client.connect();
     db = client.db(DB_NAME);
-    messagesCollection = db.collection(MESSAGES_COLLECTION_NAME);
-    usersCollection = db.collection(USERS_COLLECTION_NAME);
-    channelsCollection = db.collection(CHANNELS_COLLECTION_NAME);
-    console.log('[Server] Successfully connected to MongoDB Atlas!');
-
-    await messagesCollection.createIndex({ timestamp: 1 });
-    await messagesCollection.createIndex({ channel: 1, timestamp: 1 });
-    await usersCollection.createIndex({ username: 1 }, { unique: true });
-    await channelsCollection.createIndex({ name: 1 }, { unique: true });
-
-    await ensureDefaultChannel();
-    await loadChannels();
-    console.log('[Server] Database indexes and channels checked/created.');
-  } catch (error) {
-    console.error('[Server] Failed to connect to MongoDB:', error);
+    usersCollection = db.collection('users');
+    messagesCollection = db.collection('messages');
+    channelsCollection = db.collection('channels');
+    await ensureIndexes();
+    console.log('[DB] Connected successfully to MongoDB Atlas');
+  } catch (err) {
+    console.error('[DB] Failed to connect to MongoDB Atlas:', err);
     process.exit(1);
   }
 }
 
-// --- Channel Management ---
-async function ensureDefaultChannel() {
+async function ensureIndexes() {
   try {
-    const defaultChannelExists = await channelsCollection.findOne({
-      name: DEFAULT_CHANNEL,
-    });
-    if (!defaultChannelExists) {
-      await channelsCollection.insertOne({
-        name: DEFAULT_CHANNEL,
-        createdAt: new Date(),
-      });
-      console.log(`[Server] Default channel '${DEFAULT_CHANNEL}' created.`);
-    }
-  } catch (error) {
-    console.error('[Server] Error ensuring default channel:', error);
-  }
-}
-async function loadChannels() {
-  if (!channelsCollection) return;
-  try {
-    const channels = await channelsCollection
-      .find({}, { projection: { name: 1, _id: 0 } })
-      .toArray();
-    availableChannels = channels.map((c) => c.name);
-    console.log('[Server] Loaded channels:', availableChannels);
-  } catch (error) {
-    console.error('[Server] Error loading channels:', error);
-    availableChannels = [DEFAULT_CHANNEL];
+    await usersCollection.createIndex({ username: 1 }, { unique: true });
+    await messagesCollection.createIndex({ channel: 1 });
+    await messagesCollection.createIndex({ timestamp: -1 });
+    await channelsCollection.createIndex({ name: 1 }, { unique: true });
+    console.log('[DB] Indexes ensured.');
+  } catch (err) {
+    console.error('[DB] Error ensuring indexes:', err);
   }
 }
 
-// --- History Handling (DB) ---
-async function loadHistoryFromDB(channel = DEFAULT_CHANNEL, limit = 100) {
-  if (!messagesCollection) return [];
+// --- Riot API Helpers ---
+async function getRiotAccountByRiotId(gameName, tagLine) {
+  const regionalRoute = 'americas'; // Default or determine based on common taglines? For now, hardcode Americas. Needs improvement.
+  // A better approach would be to ask the user for their region during linking.
+  // We need the REGIONAL route for ACCOUNT-V1
+  const url = `https://${regionalRoute}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`;
   try {
-    const history = await messagesCollection
-      .find({ channel: channel })
-      .sort({ timestamp: -1 })
-      .limit(limit)
-      .toArray();
-    return history.reverse();
+    console.log(`[Riot API] Fetching account for ${gameName}#${tagLine} via ${regionalRoute}`);
+    const response = await axios.get(url, {
+      headers: { 'X-Riot-Token': RIOT_API_KEY },
+    });
+    return response.data; // { puuid, gameName, tagLine }
   } catch (error) {
-    console.error(
-      `[Server] Error loading history for channel '${channel}':`,
-      error
-    );
-    return [];
+    console.error(`[Riot API] Error fetching account for ${gameName}#${tagLine}:`, error.response?.status, error.response?.data || error.message);
+    if (error.response?.status === 404) {
+      throw new Error('Riot ID not found.');
+    } else if (error.response?.status === 403) {
+       throw new Error('Riot API Key Forbidden or Expired.');
+    }
+    throw new Error('Failed to fetch Riot account data.');
   }
 }
-async function saveMessageToDB(messageData) {
-  if (!messagesCollection || !messageData.channel) return;
+
+async function getHighestChampionMastery(puuid, platformId) {
+  // We need the PLATFORM route for CHAMPION-MASTERY-V4
+  if (!platformId || !RIOT_REGION_MAP[platformId.toLowerCase()]) {
+      console.error(`[Riot API] Invalid or unsupported platformId: ${platformId}`);
+      throw new Error('Invalid or unsupported region provided.');
+  }
+  const url = `https://${platformId.toLowerCase()}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/${puuid}/top?count=1`;
   try {
-    const result = await messagesCollection.insertOne(messageData);
-    return result.insertedId; // Return the ID of the saved message
+    console.log(`[Riot API] Fetching top mastery for PUUID ${puuid} on ${platformId}`);
+    const response = await axios.get(url, {
+      headers: { 'X-Riot-Token': RIOT_API_KEY },
+    });
+    if (response.data && response.data.length > 0) {
+      return response.data[0]; // { championId, championLevel, championPoints, ... }
+    }
+    return null; // No mastery data found
   } catch (error) {
-    console.error('[Server] Error saving message to database:', error);
+    console.error(`[Riot API] Error fetching mastery for PUUID ${puuid} on ${platformId}:`, error.response?.status, error.response?.data || error.message);
+     if (error.response?.status === 403) {
+       throw new Error('Riot API Key Forbidden or Expired.');
+    }
+    // Don't throw an error if mastery just doesn't exist, return null
+    if (error.response?.status !== 404) {
+        throw new Error('Failed to fetch Riot champion mastery data.');
+    }
     return null;
   }
 }
 
-// --- Broadcast Logic ---
-function broadcast(message) {
-  const messageString = JSON.stringify(message);
-  clients.forEach((userInfo, ws) => {
-    if (userInfo && userInfo.username && ws.readyState === WebSocket.OPEN) {
-      ws.send(messageString);
+// --- Champion Data Fetching ---
+async function fetchChampionData() {
+    try {
+        // Find the latest version
+        const versionsUrl = 'https://ddragon.leagueoflegends.com/api/versions.json';
+        const versionsResponse = await axios.get(versionsUrl);
+        const latestVersion = versionsResponse.data[0];
+        console.log(`[Data Dragon] Latest version: ${latestVersion}`);
+
+        // Fetch champion data for the latest version
+        const championDataUrl = `https://ddragon.leagueoflegends.com/cdn/${latestVersion}/data/en_US/champion.json`;
+        const championResponse = await axios.get(championDataUrl);
+        const champions = championResponse.data.data; // Object where keys are champion names
+
+        // Create ID -> Name mapping
+        const idToNameMap = {};
+        for (const champName in champions) {
+            const champInfo = champions[champName];
+            idToNameMap[champInfo.key] = champInfo.name; // champInfo.key is the numerical ID as a string
+        }
+        championData = idToNameMap;
+        console.log(`[Data Dragon] Successfully loaded data for ${Object.keys(championData).length} champions.`);
+    } catch (error) {
+        console.error('[Data Dragon] Failed to fetch champion data:', error.message);
+        // Handle error appropriately, maybe retry or use fallback data
+        championData = {}; // Ensure it's empty on failure
     }
-  });
-}
-function broadcastChannelList() {
-  const message = { type: 'channel-list', payload: availableChannels };
-  console.log('[Server] Broadcasting updated channel list:', availableChannels);
-  broadcast(message);
-}
-async function broadcastUserListUpdate() {
-  try {
-    const allUsersCursor = usersCollection.find(
-      {},
-      { projection: { username: 1, profilePicture: 1, _id: 0 } }
-    );
-    const allUserDocs = await allUsersCursor.toArray();
-    const allUserDetails = allUserDocs.map(u => ({ username: u.username, profilePicture: u.profilePicture }));
-    const onlineUsernames = Array.from(onlineUsers.keys());
-
-    console.log(
-      '[Server] Broadcasting user list update. All:',
-      allUserDetails.length,
-      'Online:',
-      onlineUsernames.length
-    );
-    broadcast({
-      type: 'user-list-update',
-      payload: { all: allUserDetails, online: onlineUsernames },
-    });
-  } catch (error) {
-    console.error('[Server] Error fetching or broadcasting user list:', error);
-  }
-}
-function broadcastTypingUpdate() {
-  const currentlyTyping = Array.from(typingUsers.keys());
-  broadcast({ type: 'typing-update', payload: { typing: currentlyTyping } });
 }
 
-// --- Authentication Logic ---
-async function handleSignup(ws, data) {
-  if (clients.get(ws)?.username)
-    return ws.send(
-      JSON.stringify({
-        type: 'signup-response',
-        success: false,
-        error: 'Already logged in',
-      })
-    );
-  const { username, password } = data;
-  if (!username || !password)
-    return ws.send(
-      JSON.stringify({
-        type: 'signup-response',
-        success: false,
-        error: 'Username and password required',
-      })
-    );
-  try {
-    const existingUser = await usersCollection.findOne({
-      username: username.toLowerCase(),
-    });
-    if (existingUser)
-      return ws.send(
-        JSON.stringify({
-          type: 'signup-response',
-          success: false,
-          error: 'Username already taken',
-        })
-      );
-    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-    await usersCollection.insertOne({
-      username: username.toLowerCase(),
-      password: hashedPassword,
-      admin: false,
-      profilePicture: null,
-      aboutMe: '',
-      createdAt: new Date(),
-    });
-    console.log(`[Server] User created: ${username}`);
-    ws.send(JSON.stringify({ type: 'signup-response', success: true }));
-  } catch (error) {
-    console.error('[Server] Signup error:', error);
-    ws.send(
-      JSON.stringify({
-        type: 'signup-response',
-        success: false,
-        error: 'Server error during signup',
-      })
-    );
-  }
+function getChampionNameById(championId) {
+    return championData[championId] || 'Unknown Champion'; // Return name or fallback
 }
 
-async function handleLogin(ws, data) {
-  if (clients.get(ws)?.username)
-    return ws.send(
-      JSON.stringify({
-        type: 'login-response',
-        success: false,
-        error: 'Already logged in',
-      })
-    );
-  const { username, password } = data;
-  if (!username || !password)
-    return ws.send(
-      JSON.stringify({
-        type: 'login-response',
-        success: false,
-        error: 'Username and password required',
-      })
-    );
-  try {
-    const user = await usersCollection.findOne({
-      username: username.toLowerCase(),
-    });
-    if (!user)
-      return ws.send(
-        JSON.stringify({
-          type: 'login-response',
-          success: false,
-          error: 'Invalid username or password',
-        })
-      );
-    const match = await bcrypt.compare(password, user.password);
-    if (!match)
-      return ws.send(
-        JSON.stringify({
-          type: 'login-response',
-          success: false,
-          error: 'Invalid username or password',
-        })
-      );
 
-    const currentChannel = DEFAULT_CHANNEL;
-    const userInfo = {
-      username: user.username,
-      currentChannel: currentChannel,
-      isAdmin: user.admin || false,
-      partyMode: false,
-    };
-    clients.set(ws, userInfo);
-    onlineUsers.set(user.username, {
-      ws: ws,
-      currentChannel: currentChannel,
-      isAdmin: userInfo.isAdmin,
-    });
-    console.log(
-      `[Server] User logged in: ${user.username} (Admin: ${userInfo.isAdmin}), joined channel: ${currentChannel}`
-    );
+// --- WebSocket Server Logic ---
+const wss = new WebSocketServer({ port: PORT });
+console.log(`[Server] WebSocket server started on port ${PORT}`);
 
-    const initialHistory = await loadHistoryFromDB(currentChannel);
-    ws.send(
-      JSON.stringify({
-        type: 'login-response',
-        success: true,
-        username: user.username,
-        isAdmin: userInfo.isAdmin,
-        profilePicture: user.profilePicture,
-        aboutMe: user.aboutMe,
-      })
-    );
-    ws.send(
-      JSON.stringify({ type: 'channel-list', payload: availableChannels })
-    );
-    ws.send(
-      JSON.stringify({
-        type: 'history',
-        channel: currentChannel,
-        payload: initialHistory,
-      })
-    );
-    broadcastUserListUpdate();
-  } catch (error) {
-    console.error('[Server] Login error:', error);
-    ws.send(
-      JSON.stringify({
-        type: 'login-response',
-        success: false,
-        error: 'Server error during login',
-      })
-    );
-  }
-}
+wss.on('connection', (ws) => {
+  console.log('[Server] Client connected');
+  clients.set(ws, { username: null, currentChannel: null, isAdmin: false, partyMode: false });
 
-// --- Message & Action Handling ---
-async function handleChatMessage(ws, data) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.username) return;
-  const targetChannel = userInfo.currentChannel;
-  if (data.text && targetChannel) {
-    const messageData = {
-      type: 'chat',
-      channel: targetChannel,
-      text: data.text,
-      sender: userInfo.username,
-      timestamp: Date.now(),
-      edited: false,
-    };
-    const insertedId = await saveMessageToDB(messageData);
-    if (insertedId) {
-      messageData._id = insertedId;
-      broadcast(messageData);
-    }
-  } else {
-    console.warn(
-      '[Server] Received invalid chat message format or missing channel:',
-      data
-    );
-  }
-}
-async function handleSwitchChannel(ws, data) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.username) return;
-  const requestedChannel = data.channel;
-  if (!requestedChannel || !availableChannels.includes(requestedChannel)) {
-    console.warn(
-      `[Server] User ${userInfo.username} requested invalid channel: ${requestedChannel}`
-    );
-    return;
-  }
-  userInfo.currentChannel = requestedChannel;
-  clients.set(ws, userInfo);
-  onlineUsers.set(userInfo.username, {
-    ...onlineUsers.get(userInfo.username),
-    currentChannel: requestedChannel,
-  });
-  console.log(
-    `[Server] User ${userInfo.username} switched to channel: ${requestedChannel}`
-  );
-  const channelHistory = await loadHistoryFromDB(requestedChannel);
-  ws.send(
-    JSON.stringify({
-      type: 'history',
-      channel: requestedChannel,
-      payload: channelHistory,
-    })
-  );
-}
-async function handleCreateChannel(ws, data) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.isAdmin) {
-    return ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'Permission denied: Admin required',
-      })
-    );
-  }
-  const channelName = data.name?.trim().toLowerCase().replace(/\s+/g, '-');
-  if (!channelName) {
-    return ws.send(
-      JSON.stringify({ type: 'error', message: 'Invalid channel name' })
-    );
-  }
-  if (availableChannels.includes(channelName)) {
-    return ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: `Channel '#${channelName}' already exists`,
-      })
-    );
-  }
-  try {
-    await channelsCollection.insertOne({
-      name: channelName,
-      createdAt: new Date(),
-    });
-    console.log(
-      `[Server] Admin ${userInfo.username} created channel: ${channelName}`
-    );
-    await loadChannels();
-    broadcastChannelList();
-  } catch (error) {
-    console.error(`[Server] Error creating channel ${channelName}:`, error);
-    ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'Server error creating channel',
-      })
-    );
-  }
-}
-async function handleDeleteChannel(ws, data) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.isAdmin) {
-    return ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'Permission denied: Admin required',
-      })
-    );
-  }
-  const channelName = data.channel;
-  if (!channelName || channelName === DEFAULT_CHANNEL) {
-    return ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'Invalid channel or cannot delete default channel',
-      })
-    );
-  }
-  if (!availableChannels.includes(channelName)) {
-    return ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: `Channel '#${channelName}' does not exist`,
-      })
-    );
-  }
-  try {
-    const deleteChannelResult = await channelsCollection.deleteOne({
-      name: channelName,
-    });
-    const deleteMessagesResult = await messagesCollection.deleteMany({
-      channel: channelName,
-    });
-    console.log(
-      `[Server] Admin ${userInfo.username} deleted channel: ${channelName}. Channel deleted: ${deleteChannelResult.deletedCount}, Messages deleted: ${deleteMessagesResult.deletedCount}`
-    );
-    await loadChannels();
-    broadcastChannelList();
-  } catch (error) {
-    console.error(`[Server] Error deleting channel ${channelName}:`, error);
-    ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'Server error deleting channel',
-      })
-    );
-  }
-}
-async function handleGetUserProfile(ws, data) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.username) return;
-  const targetUsername = data.username;
-  if (!targetUsername) return;
-  try {
-    const profile = await usersCollection.findOne(
-      { username: targetUsername.toLowerCase() },
-      { projection: { username: 1, aboutMe: 1, profilePicture: 1, _id: 0 } }
-    );
-    if (profile) {
-      ws.send(
-        JSON.stringify({
-          type: 'user-profile-response',
-          success: true,
-          profile: profile,
-        })
-      );
-    } else {
-      ws.send(
-        JSON.stringify({
-          type: 'user-profile-response',
-          success: false,
-          error: 'User not found',
-        })
-      );
-    }
-  } catch (error) {
-    console.error(
-      `[Server] Error fetching profile for ${targetUsername}:`,
-      error
-    );
-    ws.send(
-      JSON.stringify({
-        type: 'user-profile-response',
-        success: false,
-        error: 'Server error fetching profile',
-      })
-    );
-  }
-}
-async function handleEditMessage(ws, data) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.username) return;
-  const { messageId, newText } = data;
-  if (!messageId || !newText?.trim()) {
-    return ws.send(
-      JSON.stringify({ type: 'error', message: 'Invalid edit request' })
-    );
-  }
-  try {
-    const messageObjectId = new ObjectId(messageId);
-    const message = await messagesCollection.findOne({ _id: messageObjectId });
-    if (!message) {
-      return ws.send(
-        JSON.stringify({ type: 'error', message: 'Message not found' })
-      );
-    }
-    if (message.sender !== userInfo.username) {
-      return ws.send(
-        JSON.stringify({
-          type: 'error',
-          message: 'You can only edit your own messages',
-        })
-      );
-    }
-    const updateResult = await messagesCollection.updateOne(
-      { _id: messageObjectId },
-      {
-        $set: {
-          text: newText.trim(),
-          edited: true,
-          editedTimestamp: Date.now(),
-        },
+  ws.on('message', async (message) => {
+    let parsedMessage;
+    try {
+      parsedMessage = JSON.parse(message);
+      // console.log('[Server] Received:', parsedMessage); // Debug: Log all messages
+
+      const clientData = clients.get(ws);
+      if (!clientData) return; // Should not happen
+
+      switch (parsedMessage.type) {
+        case 'signup':
+          await handleSignup(ws, parsedMessage);
+          break;
+        case 'login':
+          await handleLogin(ws, parsedMessage);
+          break;
+        // --- Authenticated Routes ---
+        case 'chat':
+          if (clientData.username && clientData.currentChannel) {
+            await handleChatMessage(ws, parsedMessage.text);
+          }
+          break;
+        case 'upload-file':
+           if (clientData.username && clientData.currentChannel && parsedMessage.buffer) {
+             // Convert the received plain object buffer back to a Node.js Buffer
+             const nodeBuffer = Buffer.from(parsedMessage.buffer.data);
+             await handleFileUpload(ws, parsedMessage.name, parsedMessage.fileType, nodeBuffer);
+           }
+           break;
+        case 'switch-channel':
+          if (clientData.username) {
+            await handleSwitchChannel(ws, parsedMessage.channel);
+          }
+          break;
+        case 'create-channel':
+          if (clientData.isAdmin) {
+            await handleCreateChannel(ws, parsedMessage.name);
+          } else {
+            sendError(ws, 'Permission denied: Admin required');
+          }
+          break;
+        case 'delete-channel':
+          if (clientData.isAdmin) {
+            await handleDeleteChannel(ws, parsedMessage.channel);
+          } else {
+            sendError(ws, 'Permission denied: Admin required');
+          }
+          break;
+        case 'get-user-profile':
+          if (clientData.username) {
+            await handleGetUserProfile(ws, parsedMessage.username);
+          }
+          break;
+        case 'get-own-profile': // New handler for settings
+          if (clientData.username) {
+            await handleGetOwnProfile(ws);
+          }
+          break;
+        case 'update-about-me':
+          if (clientData.username) {
+            await handleUpdateAboutMe(ws, parsedMessage.aboutMe);
+          }
+          break;
+        case 'update-profile-picture':
+          if (clientData.username) {
+            await handleUpdateProfilePicture(ws, parsedMessage.profilePicture);
+          }
+          break;
+        case 'edit-message':
+          if (clientData.username) {
+            await handleEditMessage(ws, parsedMessage.messageId, parsedMessage.newText);
+          }
+          break;
+        case 'delete-message':
+          if (clientData.username) {
+            await handleDeleteMessage(ws, parsedMessage.messageId);
+          }
+          break;
+        case 'start-typing':
+          if (clientData.username && clientData.currentChannel) {
+            handleStartTyping(ws);
+          }
+          break;
+        case 'stop-typing':
+          if (clientData.username) {
+            handleStopTyping(ws);
+          }
+          break;
+        case 'toggle-user-party-mode':
+          if (clientData.isAdmin) {
+            await handleTogglePartyMode(ws, parsedMessage.username);
+          } else {
+            sendError(ws, 'Permission denied: Admin required');
+          }
+          break;
+        case 'link-riot-account': // New Handler
+          if (clientData.username) {
+            await handleLinkRiotAccount(ws, parsedMessage.gameName, parsedMessage.tagLine, parsedMessage.platformId);
+          }
+          break;
+        default:
+          console.log(`[Server] Unknown message type: ${parsedMessage.type}`);
       }
-    );
-    if (updateResult.modifiedCount === 1) {
-      console.log(
-        `[Server] User ${userInfo.username} edited message ${messageId}`
-      );
-      broadcast({
-        type: 'message-edited',
-        payload: {
-          _id: messageId,
-          channel: message.channel,
-          text: newText.trim(),
-          edited: true,
-        },
-      });
-    } else {
-      ws.send(
-        JSON.stringify({ type: 'error', message: 'Failed to edit message' })
-      );
+    } catch (e) {
+      console.error('[Server] Failed to parse message or handle client request:', e);
+      sendError(ws, 'Invalid message format or server error.');
     }
-  } catch (error) {
-    console.error(`[Server] Error editing message ${messageId}:`, error);
-    ws.send(
-      JSON.stringify({ type: 'error', message: 'Server error editing message' })
-    );
+  });
+
+  ws.on('close', () => {
+    console.log('[Server] Client disconnected');
+    handleDisconnect(ws);
+    clients.delete(ws);
+  });
+
+  ws.on('error', (error) => {
+    console.error('[Server] WebSocket error:', error);
+    handleDisconnect(ws); // Clean up on error too
+    clients.delete(ws);
+  });
+
+  // Send initial channel list on connection
+  sendChannelList(ws);
+});
+
+// --- Message Handlers ---
+
+async function handleSignup(ws, credentials) {
+  const { username, password } = credentials;
+  if (!username || !password) {
+    return sendResponse(ws, 'signup-response', { success: false, error: 'Username and password required' });
   }
-}
-async function handleDeleteMessage(ws, data) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.username) return;
-  const { messageId } = data;
-  if (!messageId) {
-    return ws.send(
-      JSON.stringify({ type: 'error', message: 'Invalid delete request' })
-    );
-  }
+  const lowerCaseUsername = username.toLowerCase();
   try {
-    const messageObjectId = new ObjectId(messageId);
-    const message = await messagesCollection.findOne({ _id: messageObjectId });
-    if (!message) {
-      return;
+    const existingUser = await usersCollection.findOne({ username: lowerCaseUsername });
+    if (existingUser) {
+      return sendResponse(ws, 'signup-response', { success: false, error: 'Username already taken' });
     }
-    if (message.sender !== userInfo.username) {
-      return ws.send(
-        JSON.stringify({
-          type: 'error',
-          message: 'You can only delete your own messages',
-        })
-      );
-    }
-    const deleteResult = await messagesCollection.deleteOne({
-      _id: messageObjectId,
-    });
-    if (deleteResult.deletedCount === 1) {
-      console.log(
-        `[Server] User ${userInfo.username} deleted message ${messageId}`
-      );
-      broadcast({
-        type: 'message-deleted',
-        payload: { _id: messageId, channel: message.channel },
-      });
-    } else {
-      console.warn(
-        `[Server] Message ${messageId} not found for deletion, possibly already deleted.`
-      );
-    }
-  } catch (error) {
-    console.error(`[Server] Error deleting message ${messageId}:`, error);
-    ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'Server error deleting message',
-      })
-    );
-  }
-}
-function handleStartTyping(ws, _data) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.username) return;
-  const username = userInfo.username;
-  if (typingUsers.has(username)) {
-    clearTimeout(typingUsers.get(username));
-  }
-  const timeoutId = setTimeout(() => {
-    typingUsers.delete(username);
-    broadcastTypingUpdate();
-  }, TYPING_TIMEOUT_MS);
-  typingUsers.set(username, timeoutId);
-  broadcastTypingUpdate();
-}
-function handleStopTyping(ws, _data) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.username) return;
-  const username = userInfo.username;
-  if (typingUsers.has(username)) {
-    clearTimeout(typingUsers.get(username));
-    typingUsers.delete(username);
-    broadcastTypingUpdate();
+    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+    const newUser = {
+      username: lowerCaseUsername,
+      password: hashedPassword,
+      admin: false, // Default to non-admin
+      profilePicture: null, // Default PFP
+      aboutMe: '', // Default About Me
+      createdAt: new Date(),
+      // Riot fields initialized to null/empty
+      riotPuuid: null,
+      riotGameName: null,
+      riotTagLine: null,
+      riotPlatformId: null,
+      riotHighestMasteryChampionId: null,
+      riotHighestMasteryPoints: null,
+    };
+    await usersCollection.insertOne(newUser);
+    console.log(`[Auth] User ${lowerCaseUsername} signed up successfully.`);
+    sendResponse(ws, 'signup-response', { success: true });
+  } catch (err) {
+    console.error('[Auth] Signup error:', err);
+    sendResponse(ws, 'signup-response', { success: false, error: 'Server error during signup' });
   }
 }
 
-// --- Profile Settings Handlers ---
-async function handleGetOwnProfile(ws) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.username) {
-    return ws.send(
-      JSON.stringify({ type: 'error', message: 'Not logged in' })
-    );
+async function handleLogin(ws, credentials) {
+  const { username, password } = credentials;
+  if (!username || !password) {
+    return sendResponse(ws, 'login-response', { success: false, error: 'Username and password required' });
   }
+  const lowerCaseUsername = username.toLowerCase();
   try {
-    const profile = await usersCollection.findOne(
-      { username: userInfo.username },
-      { projection: { username: 1, aboutMe: 1, profilePicture: 1, _id: 0 } }
-    );
-    if (profile) {
-      ws.send(
-        JSON.stringify({ type: 'own-profile-response', profile: profile })
-      );
-    } else {
-      console.error(`[Server] Could not find profile for logged-in user: ${userInfo.username}`);
-      ws.send(
-        JSON.stringify({ type: 'own-profile-response', profile: null })
-      );
+    const user = await usersCollection.findOne({ username: lowerCaseUsername });
+    if (!user) {
+      return sendResponse(ws, 'login-response', { success: false, error: 'Invalid username or password' });
     }
-  } catch (error) {
-    console.error(`[Server] Error fetching own profile for ${userInfo.username}:`, error);
-    ws.send(
-      JSON.stringify({ type: 'own-profile-response', profile: null })
-    );
-  }
-}
-
-async function handleUpdateAboutMe(ws, data) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.username) {
-    return ws.send(
-      JSON.stringify({ type: 'error', message: 'Not logged in' })
-    );
-  }
-  const newAboutMe = data.aboutMe?.trim() ?? '';
-  if (newAboutMe.length > 190) {
-     return ws.send(
-      JSON.stringify({ type: 'error', message: 'About Me text exceeds 190 characters.' })
-    );
-  }
-  try {
-    const updateResult = await usersCollection.updateOne(
-      { username: userInfo.username },
-      { $set: { aboutMe: newAboutMe } }
-    );
-    if (updateResult.modifiedCount === 1) {
-      console.log(`[Server] User ${userInfo.username} updated their About Me.`);
-    } else if (updateResult.matchedCount === 1 && updateResult.modifiedCount === 0) {
-      console.log(`[Server] User ${userInfo.username} About Me unchanged.`);
+    const match = await bcrypt.compare(password, user.password);
+    if (match) {
+      console.log(`[Auth] User ${lowerCaseUsername} logged in successfully.`);
+      const clientData = clients.get(ws);
+      if (clientData) {
+        clientData.username = user.username;
+        clientData.isAdmin = user.admin || false;
+        clientData.currentChannel = 'general'; // Default channel
+        clientData.partyMode = false; // Reset party mode on login
+        onlineUsers.set(user.username, { isAdmin: clientData.isAdmin, partyMode: clientData.partyMode });
+        broadcastUserList();
+        sendResponse(ws, 'login-response', {
+          success: true,
+          username: user.username,
+          isAdmin: clientData.isAdmin,
+          profilePicture: user.profilePicture, // Send PFP on login
+          aboutMe: user.aboutMe, // Send About Me on login
+          // Send Riot data if available
+          riotHighestMasteryChampionName: user.riotHighestMasteryChampionId ? getChampionNameById(user.riotHighestMasteryChampionId) : null,
+          riotHighestMasteryPoints: user.riotHighestMasteryPoints,
+        });
+        await sendChannelHistory(ws, 'general'); // Send history for default channel
+      }
     } else {
-       console.warn(`[Server] Failed to update About Me for user ${userInfo.username}. Matched: ${updateResult.matchedCount}`);
-       ws.send(JSON.stringify({ type: 'error', message: 'Failed to update profile.' }));
+      sendResponse(ws, 'login-response', { success: false, error: 'Invalid username or password' });
     }
-  } catch (error) {
-     console.error(`[Server] Error updating About Me for ${userInfo.username}:`, error);
-     ws.send(JSON.stringify({ type: 'error', message: 'Server error updating profile.' }));
+  } catch (err) {
+    console.error('[Auth] Login error:', err);
+    sendResponse(ws, 'login-response', { success: false, error: 'Server error during login' });
   }
 }
 
-async function handleUpdateProfilePicture(ws, data) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.username) {
-    return ws.send(
-      JSON.stringify({ type: 'error', message: 'Not logged in' })
-    );
-  }
-  const imageDataUrl = data.profilePicture;
-  if (!imageDataUrl || !imageDataUrl.startsWith('data:image/') || imageDataUrl.length > MAX_DATA_URL_LENGTH) {
-     console.warn(`[Server] Invalid profile picture data received from ${userInfo.username}. Length: ${imageDataUrl?.length}`);
-     return ws.send(
-      JSON.stringify({ type: 'error', message: 'Invalid or too large image data.' })
-    );
-  }
+async function handleChatMessage(ws, text) {
+  const clientData = clients.get(ws);
+  if (!clientData || !clientData.username || !clientData.currentChannel || !text) return;
 
-  try {
-    const updateResult = await usersCollection.updateOne(
-      { username: userInfo.username },
-      { $set: { profilePicture: imageDataUrl } }
-    );
-    if (updateResult.modifiedCount === 1) {
-      console.log(`[Server] User ${userInfo.username} updated their profile picture.`);
-      broadcast({
-        type: 'profile-updated',
-        payload: {
-          username: userInfo.username,
-          profilePicture: imageDataUrl,
-        },
-      });
-    } else {
-       console.warn(`[Server] Failed to update profile picture for user ${userInfo.username}. Matched: ${updateResult.matchedCount}`);
-       ws.send(JSON.stringify({ type: 'error', message: 'Failed to update profile picture.' }));
-    }
-  } catch (error) {
-     console.error(`[Server] Error updating profile picture for ${userInfo.username}:`, error);
-     ws.send(JSON.stringify({ type: 'error', message: 'Server error updating profile picture.' }));
-  }
-}
-
-// --- Per-User Party Mode Handler ---
-function handleToggleUserPartyMode(ws, data) {
-  const adminInfo = clients.get(ws);
-  if (!adminInfo || !adminInfo.isAdmin) {
-    return ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'Permission denied: Admin required',
-      })
-    );
-  }
-  const targetUsername = data.username;
-  if (!targetUsername) {
-    return ws.send(
-      JSON.stringify({ type: 'error', message: 'Target username required' })
-    );
-  }
-  const targetClientInfo = onlineUsers.get(targetUsername);
-  if (!targetClientInfo || !targetClientInfo.ws) {
-    return ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: `User '${targetUsername}' is not online`,
-      })
-    );
-  }
-  const targetWs = targetClientInfo.ws;
-  const fullTargetInfo = clients.get(targetWs);
-  if (!fullTargetInfo) {
-    console.error(
-      `[Server] Inconsistency: User ${targetUsername} found in onlineUsers but not in clients map.`
-    );
-    return ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'Internal server error finding user state',
-      })
-    );
-  }
-  fullTargetInfo.partyMode = !fullTargetInfo.partyMode;
-  clients.set(targetWs, fullTargetInfo);
-  console.log(
-    `[Server] Admin ${adminInfo.username} toggled party mode for ${targetUsername} to ${fullTargetInfo.partyMode}`
-  );
-  if (targetWs.readyState === WebSocket.OPEN) {
-    targetWs.send(
-      JSON.stringify({
-        type: 'party-mode-update',
-        payload: { active: fullTargetInfo.partyMode },
-      })
-    );
-  }
-}
-
-// --- File Upload Handler (AWS S3) ---
-async function handleUploadFile(ws, data) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || !userInfo.username) {
-    return ws.send(JSON.stringify({ type: 'error', message: 'Not logged in' }));
-  }
-  if (!s3Client) {
-    console.error('[Server] S3 client not initialized. Cannot upload file.');
-    return ws.send(JSON.stringify({ type: 'error', message: 'File upload service not configured.' }));
-  }
-  const targetChannel = userInfo.currentChannel;
-  if (!targetChannel) {
-    return ws.send(JSON.stringify({ type: 'error', message: 'No active channel' }));
-  }
-
-  if (!data.buffer || data.buffer.type !== 'Buffer' || !Array.isArray(data.buffer.data)) {
-     console.error('[Server] Invalid buffer format received for file upload:', data.buffer);
-     return ws.send(JSON.stringify({ type: 'error', message: 'Invalid file data format received.' }));
-  }
-  const fileBuffer = Buffer.from(data.buffer.data);
-
-  const fileName = data.name || 'upload';
-  const fileType = data.fileType || 'application/octet-stream';
-  const fileSize = fileBuffer.length;
-
-  if (fileSize > MAX_UPLOAD_SIZE) {
-    return ws.send(JSON.stringify({ type: 'error', message: `File size exceeds limit (${MAX_UPLOAD_SIZE / 1024 / 1024}MB)` }));
-  }
-
-  const uniqueFilename = `${uuidv4()}-${fileName}`; // S3 Object Key
-
-  const params = {
-    Bucket: AWS_S3_BUCKET_NAME,
-    Key: uniqueFilename,
-    Body: fileBuffer,
-    ContentType: fileType,
-    ACL: 'public-read', // Explicitly set object ACL to public-read
+  const message = {
+    channel: clientData.currentChannel,
+    sender: clientData.username,
+    text: text,
+    timestamp: Date.now(),
+    edited: false,
+    attachment: null, // Ensure attachment is null for text messages
   };
 
   try {
-    const command = new PutObjectCommand(params);
-    await s3Client.send(command);
-    console.log(`[Server] User ${userInfo.username} uploaded file to S3: ${uniqueFilename} (${fileSize} bytes)`);
+    const result = await messagesCollection.insertOne(message);
+    message._id = result.insertedId; // Add the ID for broadcasting
+    broadcastMessage(clientData.currentChannel, message);
+    console.log(`[Chat] Message from ${clientData.username} in #${clientData.currentChannel}: ${text}`);
+  } catch (err) {
+    console.error('[Chat] Error saving message:', err);
+    sendError(ws, 'Failed to save message.');
+  }
+}
 
-    // Construct the public URL
-    // Note: Ensure your bucket policy allows public reads or use pre-signed URLs for more security
-    const fileUrl = `https://${AWS_S3_BUCKET_NAME}.s3.${AWS_REGION}.amazonaws.com/${uniqueFilename}`;
+async function handleFileUpload(ws, fileName, fileType, fileBuffer) {
+    const clientData = clients.get(ws);
+    if (!clientData || !clientData.username || !clientData.currentChannel) return;
 
-    const messageData = {
-      type: 'chat',
-      channel: targetChannel,
-      sender: userInfo.username,
-      timestamp: Date.now(),
-      edited: false,
-      attachment: {
-        url: fileUrl, // Public S3 URL
-        name: fileName,
-        type: fileType,
-        size: fileSize,
-      },
-      text: '',
+    const uniqueFileName = `${uuidv4()}-${fileName}`;
+    const s3Params = {
+        Bucket: S3_BUCKET_NAME,
+        Key: uniqueFileName,
+        Body: fileBuffer,
+        ContentType: fileType,
+        ACL: 'public-read', // Make file publicly accessible
     };
 
-    const insertedId = await saveMessageToDB(messageData);
-    if (insertedId) {
-      messageData._id = insertedId;
-      broadcast(messageData);
-    } else {
-      ws.send(JSON.stringify({ type: 'error', message: 'Failed to save attachment message to DB.' }));
-      // TODO: Consider deleting the uploaded S3 object if DB save fails
+    try {
+        console.log(`[S3] Uploading ${uniqueFileName} to ${S3_BUCKET_NAME}...`);
+        await s3Client.send(new PutObjectCommand(s3Params));
+        const fileUrl = `https://${S3_BUCKET_NAME}.s3.${S3_REGION}.amazonaws.com/${uniqueFileName}`;
+        console.log(`[S3] Upload successful: ${fileUrl}`);
+
+        // Save message to DB with attachment info
+        const message = {
+            channel: clientData.currentChannel,
+            sender: clientData.username,
+            text: '', // Text is empty for file uploads
+            timestamp: Date.now(),
+            edited: false,
+            attachment: {
+                url: fileUrl,
+                name: fileName,
+                type: fileType,
+                size: fileBuffer.length,
+            },
+        };
+        const result = await messagesCollection.insertOne(message);
+        message._id = result.insertedId;
+        broadcastMessage(clientData.currentChannel, message);
+        console.log(`[Chat] File attachment from ${clientData.username} in #${clientData.currentChannel}: ${fileName}`);
+
+    } catch (err) {
+        console.error('[S3] Error uploading file:', err);
+        sendError(ws, `Failed to upload file: ${err.message}`);
     }
-  } catch (error) {
-    console.error(`[Server] Error uploading file ${uniqueFilename} to S3:`, error);
-    ws.send(JSON.stringify({ type: 'error', message: 'Server error uploading file.' }));
+}
+
+
+async function handleSwitchChannel(ws, channelName) {
+  const clientData = clients.get(ws);
+  if (!clientData || !clientData.username) return;
+
+  // Validate channel exists (optional but good practice)
+  const channelExists = await channelsCollection.findOne({ name: channelName });
+  if (!channelExists) {
+    return sendError(ws, `Channel #${channelName} does not exist.`);
+  }
+
+  // Leave typing status in old channel
+  handleStopTyping(ws);
+
+  clientData.currentChannel = channelName;
+  console.log(`[Channel] User ${clientData.username} switched to #${channelName}`);
+  await sendChannelHistory(ws, channelName);
+  // Broadcast typing status for the new channel (initially empty)
+  broadcastTypingStatus(channelName);
+}
+
+async function handleCreateChannel(ws, channelName) {
+  if (!channelName || typeof channelName !== 'string' || channelName.trim().length === 0) {
+    return sendError(ws, 'Invalid channel name.');
+  }
+  const trimmedName = channelName.trim().toLowerCase().replace(/\s+/g, '-'); // Basic sanitization
+  try {
+    const existing = await channelsCollection.findOne({ name: trimmedName });
+    if (existing) {
+      return sendError(ws, `Channel #${trimmedName} already exists.`);
+    }
+    await channelsCollection.insertOne({ name: trimmedName, createdAt: new Date() });
+    console.log(`[Channel] Admin ${clients.get(ws)?.username} created channel #${trimmedName}`);
+    broadcastChannelList(); // Inform all clients of the new list
+  } catch (err) {
+    console.error('[Channel] Error creating channel:', err);
+    sendError(ws, 'Server error creating channel.');
+  }
+}
+
+async function handleDeleteChannel(ws, channelName) {
+  if (!channelName || channelName === 'general') {
+    return sendError(ws, 'Cannot delete the general channel or invalid name.');
+  }
+  try {
+    const result = await channelsCollection.deleteOne({ name: channelName });
+    if (result.deletedCount === 1) {
+      console.log(`[Channel] Admin ${clients.get(ws)?.username} deleted channel #${channelName}`);
+      // Optional: Delete messages from that channel? For now, just remove the channel.
+      // await messagesCollection.deleteMany({ channel: channelName });
+      broadcastChannelList(); // Inform all clients
+      // Maybe force clients out of the deleted channel?
+      clients.forEach((clientData, clientWs) => {
+        if (clientData.currentChannel === channelName) {
+          handleSwitchChannel(clientWs, 'general'); // Switch them to general
+        }
+      });
+    } else {
+      sendError(ws, `Channel #${channelName} not found.`);
+    }
+  } catch (err) {
+    console.error('[Channel] Error deleting channel:', err);
+    sendError(ws, 'Server error deleting channel.');
+  }
+}
+
+async function handleGetUserProfile(ws, targetUsername) {
+  if (!targetUsername) return;
+  try {
+    const user = await usersCollection.findOne(
+      { username: targetUsername.toLowerCase() },
+      { projection: { password: 0 } } // Exclude password
+    );
+    if (user) {
+      sendResponse(ws, 'user-profile-response', {
+        success: true,
+        profile: {
+          username: user.username,
+          aboutMe: user.aboutMe,
+          profilePicture: user.profilePicture,
+          createdAt: user.createdAt,
+          // Include Riot data if available
+          riotHighestMasteryChampionName: user.riotHighestMasteryChampionId ? getChampionNameById(user.riotHighestMasteryChampionId) : null,
+          riotHighestMasteryPoints: user.riotHighestMasteryPoints,
+        }
+      });
+    } else {
+      sendResponse(ws, 'user-profile-response', { success: false, error: 'User not found' });
+    }
+  } catch (err) {
+    console.error('[Profile] Error fetching user profile:', err);
+    sendResponse(ws, 'user-profile-response', { success: false, error: 'Server error fetching profile' });
+  }
+}
+
+async function handleGetOwnProfile(ws) {
+  const clientData = clients.get(ws);
+  if (!clientData || !clientData.username) return;
+  try {
+    const user = await usersCollection.findOne(
+      { username: clientData.username },
+      { projection: { password: 0 } } // Exclude password
+    );
+    if (user) {
+      sendResponse(ws, 'own-profile-response', {
+        profile: { // Nest under 'profile' for consistency
+          username: user.username,
+          aboutMe: user.aboutMe,
+          profilePicture: user.profilePicture,
+          createdAt: user.createdAt,
+          // Include Riot data if available
+          riotGameName: user.riotGameName,
+          riotTagLine: user.riotTagLine,
+          riotPlatformId: user.riotPlatformId,
+          riotHighestMasteryChampionName: user.riotHighestMasteryChampionId ? getChampionNameById(user.riotHighestMasteryChampionId) : null,
+          riotHighestMasteryPoints: user.riotHighestMasteryPoints,
+        }
+      });
+    } else {
+      sendError(ws, 'Could not find own profile data.'); // Should not happen if logged in
+    }
+  } catch (err) {
+    console.error('[Profile] Error fetching own profile:', err);
+    sendError(ws, 'Server error fetching own profile.');
   }
 }
 
 
-// --- Server Setup ---
-async function startServer() {
-  initializeS3Client(); // Initialize S3 client on startup
-  await connectDB();
-  // ensureUploadsDirectory(); // No longer needed for S3
-  const server = new WebSocketServer({ port: PORT });
-  server.on('listening', () =>
-    console.log(
-      `[Server] WebSocket server started and listening on port ${PORT}`
-    )
-  );
+async function handleUpdateAboutMe(ws, aboutMeText) {
+  const clientData = clients.get(ws);
+  if (!clientData || !clientData.username || typeof aboutMeText !== 'string') return;
+  const trimmedAboutMe = aboutMeText.substring(0, 190); // Enforce max length
+  try {
+    await usersCollection.updateOne(
+      { username: clientData.username },
+      { $set: { aboutMe: trimmedAboutMe } }
+    );
+    console.log(`[Profile] User ${clientData.username} updated About Me.`);
+    // No broadcast needed for About Me, refetched on profile view
+    // Optionally send a success confirmation?
+  } catch (err) {
+    console.error('[Profile] Error updating About Me:', err);
+    sendError(ws, 'Server error updating About Me.');
+  }
+}
 
-  server.on('connection', (ws, req) => {
-    const clientIdentifier =
-      req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    console.log(`[Server] Client connected: ${clientIdentifier}`);
-    clients.set(ws, null);
+async function handleUpdateProfilePicture(ws, imageDataUrl) {
+  const clientData = clients.get(ws);
+  if (!clientData || !clientData.username || (imageDataUrl !== null && typeof imageDataUrl !== 'string')) return;
+  // Basic validation: check if it's null or looks like a data URL
+  if (imageDataUrl !== null && !imageDataUrl.startsWith('data:image/')) {
+      return sendError(ws, 'Invalid image data format.');
+  }
+  // Add size check? Data URLs can be large. Limit on client is better.
 
-    ws.on('message', async (message) => {
-      let parsedMessage;
-      try {
-        parsedMessage = JSON.parse(message);
-        switch (parsedMessage.type) {
-          case 'signup': await handleSignup(ws, parsedMessage); break;
-          case 'login': await handleLogin(ws, parsedMessage); break;
-          case 'chat': await handleChatMessage(ws, parsedMessage); break;
-          case 'switch-channel': await handleSwitchChannel(ws, parsedMessage); break;
-          case 'create-channel': await handleCreateChannel(ws, parsedMessage); break;
-          case 'delete-channel': await handleDeleteChannel(ws, parsedMessage); break;
-          case 'get-user-profile': await handleGetUserProfile(ws, parsedMessage); break;
-          case 'get-own-profile': await handleGetOwnProfile(ws); break;
-          case 'update-about-me': await handleUpdateAboutMe(ws, parsedMessage); break;
-          case 'update-profile-picture': await handleUpdateProfilePicture(ws, parsedMessage); break;
-          case 'edit-message': await handleEditMessage(ws, parsedMessage); break;
-          case 'delete-message': await handleDeleteMessage(ws, parsedMessage); break;
-          case 'start-typing': handleStartTyping(ws, parsedMessage); break;
-          case 'stop-typing': handleStopTyping(ws, parsedMessage); break;
-          case 'toggle-user-party-mode': handleToggleUserPartyMode(ws, parsedMessage); break;
-          case 'upload-file': await handleUploadFile(ws, parsedMessage); break; // Handles S3 upload
-          default:
-            console.warn(
-              `[Server] Received unknown message type: ${parsedMessage.type}`
-            );
-        }
-      } catch (e) {
-        console.error(
-          '[Server] Failed to parse message or process:',
-          message.toString(),
-          e
-        );
+  try {
+    await usersCollection.updateOne(
+      { username: clientData.username },
+      { $set: { profilePicture: imageDataUrl } } // Store null or the Data URL string
+    );
+    console.log(`[Profile] User ${clientData.username} updated profile picture.`);
+    // Broadcast the update to all clients
+    broadcast({
+      type: 'profile-updated',
+      payload: {
+        username: clientData.username,
+        profilePicture: imageDataUrl
       }
     });
+  } catch (err) {
+    console.error('[Profile] Error updating profile picture:', err);
+    sendError(ws, 'Server error updating profile picture.');
+  }
+}
 
-    ws.on('close', () => {
-      const userInfo = clients.get(ws);
-      const clientDesc = `${clientIdentifier}${userInfo?.username ? ` (${userInfo.username})` : ''}`;
-      console.log(`[Server] Client disconnected: ${clientDesc}`);
-      if (userInfo && userInfo.username) {
-        if (typingUsers.has(userInfo.username)) {
-          clearTimeout(typingUsers.get(userInfo.username));
-          typingUsers.delete(userInfo.username);
-          broadcastTypingUpdate();
-        }
-        onlineUsers.delete(userInfo.username);
-        broadcastUserListUpdate();
-      }
-      clients.delete(ws);
-    });
+async function handleEditMessage(ws, messageId, newText) {
+  const clientData = clients.get(ws);
+  if (!clientData || !clientData.username || !messageId || typeof newText !== 'string') return;
+  try {
+    const objectId = new ObjectId(messageId);
+    const message = await messagesCollection.findOne({ _id: objectId });
+    if (!message) return sendError(ws, 'Message not found.');
+    if (message.sender !== clientData.username) return sendError(ws, 'Permission denied.');
+    if (message.attachment) return sendError(ws, 'Cannot edit messages with attachments.'); // Disallow editing attachment messages
 
-    ws.on('error', (error) => {
-      const userInfo = clients.get(ws);
-      const clientDesc = `${clientIdentifier}${userInfo?.username ? ` (${userInfo.username})` : ''}`;
-      console.error(`[Server] WebSocket error for client ${clientDesc}:`, error);
-      if (userInfo && userInfo.username) {
-        if (typingUsers.has(userInfo.username)) {
-          clearTimeout(typingUsers.get(userInfo.username));
-          typingUsers.delete(userInfo.username);
-          broadcastTypingUpdate();
-        }
-        onlineUsers.delete(userInfo.username);
-        broadcastUserListUpdate();
-      }
-      clients.delete(ws);
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.terminate();
-      }
-    });
-  });
-
-  server.on('error', (error) => {
-    console.error('[Server] WebSocket Server Error:', error);
-    if (error.code === 'EADDRINUSE') {
-      console.error(
-        `[Server] Port ${PORT} is already in use. Is another instance running?`
-      );
-      process.exit(1);
+    const result = await messagesCollection.updateOne(
+      { _id: objectId },
+      { $set: { text: newText, edited: true } }
+    );
+    if (result.modifiedCount === 1) {
+      console.log(`[Chat] User ${clientData.username} edited message ${messageId}`);
+      broadcast({
+        type: 'message-edited',
+        payload: { _id: messageId, channel: message.channel, text: newText, edited: true }
+      });
     }
-  });
-  process.on('SIGINT', async () => {
-    console.log('[Server] Shutting down...');
-    server.close(() => {
-      console.log('[Server] WebSocket server closed.');
-      process.exit(0);
-    });
-    setTimeout(() => {
-      console.log('[Server] Forcing remaining connections closed.');
-      clients.forEach((_userInfo, ws) => ws.terminate());
-      process.exit(1);
-    }, 3000);
+  } catch (err) {
+    console.error('[Chat] Error editing message:', err);
+    sendError(ws, 'Server error editing message.');
+  }
+}
+
+async function handleDeleteMessage(ws, messageId) {
+  const clientData = clients.get(ws);
+  if (!clientData || !clientData.username || !messageId) return;
+  try {
+    const objectId = new ObjectId(messageId);
+    const message = await messagesCollection.findOne({ _id: objectId });
+    if (!message) return sendError(ws, 'Message not found.');
+    // Allow admin or original sender to delete
+    if (message.sender !== clientData.username && !clientData.isAdmin) {
+      return sendError(ws, 'Permission denied.');
+    }
+
+    const result = await messagesCollection.deleteOne({ _id: objectId });
+    if (result.deletedCount === 1) {
+      console.log(`[Chat] User ${clientData.username} deleted message ${messageId}`);
+      broadcast({
+        type: 'message-deleted',
+        payload: { _id: messageId, channel: message.channel }
+      });
+    }
+  } catch (err) {
+    console.error('[Chat] Error deleting message:', err);
+    sendError(ws, 'Server error deleting message.');
+  }
+}
+
+function handleStartTyping(ws) {
+  const clientData = clients.get(ws);
+  if (!clientData || !clientData.username || !clientData.currentChannel) return;
+
+  const username = clientData.username;
+  const channel = clientData.currentChannel;
+
+  // Clear existing timeout if user types again
+  if (userTyping.has(username)) {
+    clearTimeout(userTyping.get(username).timeout);
+  }
+
+  // Set new timeout
+  const timeout = setTimeout(() => {
+    userTyping.delete(username);
+    broadcastTypingStatus(channel);
+  }, 3000); // User stops typing if no event for 3 seconds
+
+  userTyping.set(username, { channel, timeout });
+  broadcastTypingStatus(channel);
+}
+
+function handleStopTyping(ws) {
+  const clientData = clients.get(ws);
+  if (!clientData || !clientData.username) return;
+
+  const username = clientData.username;
+  if (userTyping.has(username)) {
+    const { channel, timeout } = userTyping.get(username);
+    clearTimeout(timeout);
+    userTyping.delete(username);
+    broadcastTypingStatus(channel);
+  }
+}
+
+async function handleTogglePartyMode(ws, targetUsername) {
+  const adminData = clients.get(ws);
+  if (!adminData || !adminData.isAdmin) return sendError(ws, 'Permission denied.');
+  if (!targetUsername) return sendError(ws, 'Target username required.');
+
+  let targetWs = null;
+  let targetClientData = null;
+
+  // Find the target client's WebSocket and data
+  for (const [clientWs, clientData] of clients.entries()) {
+    if (clientData.username === targetUsername) {
+      targetWs = clientWs;
+      targetClientData = clientData;
+      break;
+    }
+  }
+
+  if (!targetClientData) return sendError(ws, `User ${targetUsername} not found or not online.`);
+
+  // Toggle the party mode state
+  targetClientData.partyMode = !targetClientData.partyMode;
+  // Update onlineUsers map as well
+  if (onlineUsers.has(targetUsername)) {
+      onlineUsers.get(targetUsername).partyMode = targetClientData.partyMode;
+  }
+
+  console.log(`[Party] Admin ${adminData.username} toggled party mode for ${targetUsername} to ${targetClientData.partyMode}`);
+
+  // Send the update specifically to the target client
+  if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+    sendResponse(targetWs, 'party-mode-update', { active: targetClientData.partyMode });
+  }
+  // Also broadcast the updated user list so everyone sees the potential change (e.g., if UI reflects party mode)
+  broadcastUserList();
+}
+
+async function handleLinkRiotAccount(ws, gameName, tagLine, platformId) {
+    const clientData = clients.get(ws);
+    if (!clientData || !clientData.username) return sendError(ws, 'Not logged in.');
+    if (!gameName || !tagLine || !platformId) return sendError(ws, 'Game Name, Tag Line, and Region are required.');
+
+    const lowerPlatformId = platformId.toLowerCase();
+    if (!RIOT_REGION_MAP[lowerPlatformId]) {
+        return sendError(ws, 'Invalid region selected.');
+    }
+
+    try {
+        // 1. Get PUUID from Riot ID
+        const accountData = await getRiotAccountByRiotId(gameName, tagLine);
+        const puuid = accountData.puuid;
+        if (!puuid) throw new Error('Could not retrieve PUUID.'); // Should be caught by getRiotAccountByRiotId
+
+        // 2. Get Highest Mastery Champion
+        const masteryData = await getHighestChampionMastery(puuid, lowerPlatformId);
+        const highestMasteryChampionId = masteryData ? masteryData.championId : null;
+        const highestMasteryPoints = masteryData ? masteryData.championPoints : null;
+
+        // 3. Update User in DB
+        const updateResult = await usersCollection.updateOne(
+            { username: clientData.username },
+            {
+                $set: {
+                    riotPuuid: puuid,
+                    riotGameName: accountData.gameName, // Store the verified gameName
+                    riotTagLine: accountData.tagLine,   // Store the verified tagLine
+                    riotPlatformId: lowerPlatformId, // Store the selected platform ID
+                    riotHighestMasteryChampionId: highestMasteryChampionId,
+                    riotHighestMasteryPoints: highestMasteryPoints,
+                }
+            }
+        );
+
+        if (updateResult.modifiedCount === 1) {
+            console.log(`[Profile] User ${clientData.username} linked Riot account: ${accountData.gameName}#${accountData.tagLine} (${lowerPlatformId})`);
+            // Send success response back to the linking client
+            sendResponse(ws, 'link-riot-account-response', {
+                success: true,
+                profile: { // Send back updated profile snippet
+                    riotGameName: accountData.gameName,
+                    riotTagLine: accountData.tagLine,
+                    riotPlatformId: lowerPlatformId,
+                    riotHighestMasteryChampionName: highestMasteryChampionId ? getChampionNameById(highestMasteryChampionId) : null,
+                    riotHighestMasteryPoints: highestMasteryPoints,
+                }
+            });
+            // Broadcast profile update so others see the new mastery tag? Maybe not necessary immediately.
+            // Let's just update on next profile view/login for now.
+        } else {
+            throw new Error('Failed to update user document in database.');
+        }
+
+    } catch (error) {
+        console.error(`[Profile] Error linking Riot account for ${clientData.username}:`, error.message);
+        sendError(ws, `Failed to link Riot account: ${error.message}`);
+    }
+}
+
+
+function handleDisconnect(ws) {
+  const clientData = clients.get(ws);
+  if (clientData && clientData.username) {
+    console.log(`[Server] User ${clientData.username} disconnected.`);
+    handleStopTyping(ws); // Ensure typing status is cleared
+    onlineUsers.delete(clientData.username);
+    broadcastUserList();
+  }
+}
+
+// --- Broadcasting & Sending ---
+
+function sendResponse(ws, type, payload) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type, ...payload }));
+  }
+}
+
+function sendError(ws, message) {
+  sendResponse(ws, 'error', { message });
+}
+
+function broadcast(message) {
+  const messageString = JSON.stringify(message);
+  // console.log('[Server] Broadcasting:', message); // Debug: Log broadcasts
+  clients.forEach((clientData, clientWs) => {
+    if (clientWs.readyState === WebSocket.OPEN) {
+      // Basic broadcast - send to everyone
+      clientWs.send(messageString);
+    }
   });
 }
 
-// --- Start the Server ---
-startServer();
+function broadcastMessage(channel, message) {
+  const messageString = JSON.stringify({ type: 'chat', ...message });
+  clients.forEach((clientData, clientWs) => {
+    if (clientWs.readyState === WebSocket.OPEN && clientData.currentChannel === channel) {
+      clientWs.send(messageString);
+    }
+  });
+}
+
+async function sendChannelHistory(ws, channelName) {
+  try {
+    const history = await messagesCollection.find({ channel: channelName })
+      .sort({ timestamp: 1 }) // Sort by oldest first
+      .limit(100) // Limit history length
+      .toArray();
+    sendResponse(ws, 'history', { channel: channelName, payload: history });
+  } catch (err) {
+    console.error(`[History] Error fetching history for #${channelName}:`, err);
+    sendError(ws, `Failed to load history for #${channelName}.`);
+  }
+}
+
+async function sendChannelList(ws) {
+  try {
+    const channels = await channelsCollection.find({}, { projection: { name: 1, _id: 0 } }).toArray();
+    const channelNames = channels.map(c => c.name);
+    if (!channelNames.includes('general')) {
+      channelNames.unshift('general'); // Ensure 'general' is always first
+    }
+    sendResponse(ws, 'channel-list', { payload: channelNames });
+  } catch (err) {
+    console.error('[Channel] Error fetching channel list:', err);
+    // Don't send error to client, maybe just log
+  }
+}
+
+function broadcastChannelList() {
+  // Fetch and broadcast the updated list to all connected clients
+  channelsCollection.find({}, { projection: { name: 1, _id: 0 } }).toArray()
+    .then(channels => {
+      const channelNames = channels.map(c => c.name);
+      if (!channelNames.includes('general')) {
+        channelNames.unshift('general');
+      }
+      broadcast({ type: 'channel-list', payload: channelNames });
+    })
+    .catch(err => console.error('[Channel] Error broadcasting channel list:', err));
+}
+
+async function broadcastUserList() {
+    // Fetch necessary details for all users (username, profilePicture)
+    // This could be optimized by caching, but fine for now.
+    try {
+        const allUsersDetails = await usersCollection.find({}, {
+            projection: { _id: 0, username: 1, profilePicture: 1 }
+        }).toArray();
+
+        const onlineUsernames = Array.from(onlineUsers.keys());
+
+        broadcast({
+            type: 'user-list-update',
+            payload: {
+                all: allUsersDetails, // Send details for all users
+                online: onlineUsernames // Send just usernames of online users
+            }
+        });
+    } catch (err) {
+        console.error('[Users] Error fetching user details for broadcast:', err);
+    }
+}
+
+
+function broadcastTypingStatus(channel) {
+  const typingInChannel = [];
+  userTyping.forEach((status, username) => {
+    if (status.channel === channel) {
+      typingInChannel.push(username);
+    }
+  });
+
+  const message = {
+    type: 'typing-update',
+    payload: { channel: channel, typing: typingInChannel }
+  };
+  const messageString = JSON.stringify(message);
+
+  clients.forEach((clientData, clientWs) => {
+    if (clientWs.readyState === WebSocket.OPEN && clientData.currentChannel === channel) {
+      clientWs.send(messageString);
+    }
+  });
+}
+
+
+// --- Initialization ---
+async function initialize() {
+  await connectDB();
+  await fetchChampionData(); // Fetch champion data on startup
+  // Start listening for connections
+}
+
+initialize();

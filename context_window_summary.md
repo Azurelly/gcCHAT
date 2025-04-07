@@ -28,10 +28,11 @@
     *   Shows desktop notifications via Electron's `Notification` API for mentions when the window is not focused.
     *   Includes basic auto-update check on startup using `electron-updater`. Added console logging for updater events, relayed to renderer via IPC (`log-message`) for visibility in packaged app DevTools.
     *   **Weather:** Fetches weather data from OpenWeatherMap API using `axios` (requires `WEATHER_API_KEY` constant) via `getWeatherByCity` function. Formats and sends weather data as a chat message when triggered by `send-weather-message` IPC event.
+    *   **Riot API:** (Not yet implemented in main process, handled by server)
 *   **Renderer Process (`index.html`, `renderer.js`, `style.css`):**
     *   Displays the UI (Login/Signup view, Chat view).
-    *   Chat view includes: Channel sidebar, main message area, user list sidebar, modals (profile view, profile settings, create/delete channel).
-    *   Handles user input (login, signup, message sending, file selection).
+    *   Chat view includes: Channel sidebar, main message area, user list sidebar, modals (profile view, profile settings, create/delete channel, weather city input).
+    *   Handles user input (login, signup, message sending, file selection, Riot ID/Region linking).
     *   Sends requests via `preload.js` API.
     *   Updates the DOM based on responses/broadcasts from the main process.
     *   Manages display logic for user area (avatar, username, settings button), settings modal (About Me editing, profile picture preview/upload), profile view modal, channel/user lists, message rendering (including consecutive message styling, attachment links/images, mention highlighting), typing indicator, new messages notification bar.
@@ -45,8 +46,8 @@
     *   Ensures channels always load scrolled to the bottom when switched to.
 *   **Preload Script (`preload.js`):**
     *   Securely exposes specific IPC channels using `contextBridge`.
-    *   Exposed methods: `sendSignup`, `sendLogin`, `sendMessage`, `editMessage`, `deleteMessage`, `sendFileAttachment`, `switchChannel`, `createChannel`, `deleteChannel`, `getUserProfile`, `startTyping`, `stopTyping`, `toggleUserPartyMode`, `requestOwnProfile`, `saveAboutMe`, `saveProfilePicture`, `requestStatus`, `showNotification`, context menu triggers (`showChannelContextMenu`, `showSidebarContextMenu`, `showMessageContextMenu`, `showUserContextMenu`, `showAttachmentMenu`), `sendWeatherMessage`.
-    *   Exposed listeners: `onSignupResponse`, `onLoginResponse`, `onMessageReceived`, `onMessageEdited`, `onMessageDeleted`, `onLoadHistory`, `onChannelList`, `onUserProfileResponse`, `onOwnProfileResponse`, `onProfileUpdated`, `onUserListUpdate`, `onPartyModeUpdate`, `onTypingUpdate`, `onStatusUpdate`, `onSendError`, `onError`, modal triggers (`onPromptCreateChannel`, `onConfirmDeleteChannel`, `onEditMessagePrompt`), `onTriggerFileUpload`, `onPromptSendWeather`.
+    *   Exposed methods: `sendSignup`, `sendLogin`, `sendMessage`, `editMessage`, `deleteMessage`, `sendFileAttachment`, `switchChannel`, `createChannel`, `deleteChannel`, `getUserProfile`, `startTyping`, `stopTyping`, `toggleUserPartyMode`, `requestOwnProfile`, `saveAboutMe`, `saveProfilePicture`, `requestStatus`, `showNotification`, context menu triggers (`showChannelContextMenu`, `showSidebarContextMenu`, `showMessageContextMenu`, `showUserContextMenu`, `showAttachmentMenu`), `sendWeatherMessage`, `linkRiotAccount`.
+    *   Exposed listeners: `onSignupResponse`, `onLoginResponse`, `onMessageReceived`, `onMessageEdited`, `onMessageDeleted`, `onLoadHistory`, `onChannelList`, `onUserProfileResponse`, `onOwnProfileResponse`, `onProfileUpdated`, `onUserListUpdate`, `onPartyModeUpdate`, `onTypingUpdate`, `onStatusUpdate`, `onSendError`, `onError`, modal triggers (`onPromptCreateChannel`, `onConfirmDeleteChannel`, `onEditMessagePrompt`), `onTriggerFileUpload`, `onPromptSendWeather`, `onLinkRiotAccountResponse`.
     *   Includes `cleanupListeners` function.
     *   Exposes `getChannelStates` (invoke) and `updateChannelState` (send) for persistent state management.
     *   Exposes `onLogMessage` listener to receive logs from main process.
@@ -71,10 +72,11 @@
     *   Profile updates (`update-about-me`, `update-profile-picture`).
     *   Per-user party mode state (`toggle-user-party-mode`, `party-mode-update`).
     *   File Uploads: Receives file data (`upload-file`), uploads to AWS S3 using `@aws-sdk/client-s3`, stores public S3 URL in message document. Reads credentials/bucket/region from environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET_NAME`, `AWS_REGION`). Sets `ACL: 'public-read'` on uploaded objects.
+    *   **Riot Account Linking:** Handles `link-riot-account` request. Uses Riot API (`axios`, requires `RIOT_API_KEY` env var) to fetch PUUID (Account-V1) and highest mastery champion (Champion-Mastery-V4). Stores Riot data in user document. Fetches champion name mapping from Data Dragon on startup.
 *   **Database:** MongoDB Atlas (free tier).
     *   **Connection:** Configured via `MONGODB_URI` environment variable on Render. DB Name: `chatApp`.
     *   **Collections:**
-        *   `users`: `username` (lowercase, unique index), `password` (hashed), `admin` (boolean), `profilePicture` (Data URL string or null), `aboutMe` (string, max 190 chars), `createdAt` (date).
+        *   `users`: `username` (lowercase, unique index), `password` (hashed), `admin` (boolean), `profilePicture` (Data URL string or null), `aboutMe` (string, max 190 chars), `createdAt` (date), `riotPuuid` (string), `riotGameName` (string), `riotTagLine` (string), `riotPlatformId` (string), `riotHighestMasteryChampionId` (number), `riotHighestMasteryPoints` (number).
         *   `messages`: `channel` (string, indexed), `text` (string), `sender` (string), `timestamp` (number, indexed), `edited` (boolean), `_id` (ObjectId), `attachment` (object: `url`, `name`, `type`, `size`).
         *   `channels`: `name` (string, unique index), `createdAt` (date).
 
@@ -86,11 +88,11 @@
 *   **Multi-Channel Chat:** Server manages channels, stores/filters messages. Client displays sidebar, allows switching.
 *   **Admin Features:** `admin` flag, context menus for channel create/delete via modals.
 *   **Message Editing/Deletion:** Implemented via context menu, server validation, DB update, broadcast.
-*   **User Profiles (View/Edit):** Click avatars/usernames for view modal. Settings modal allows editing "About Me" and uploading/previewing profile pictures (stored as Data URLs in DB). Profile picture updates broadcast via `profile-updated`.
+*   **User Profiles (View/Edit):** Click avatars/usernames for view modal. Settings modal allows editing "About Me", uploading/previewing profile pictures (stored as Data URLs in DB), and **linking Riot account (input Riot ID + Region)**. Profile picture updates broadcast via `profile-updated`. Profile view modal displays highest mastery champion if linked.
 *   **User List:** Right sidebar shows Online/Offline users with avatars.
 *   **Typing Indicator:** Client sends events, server manages state, client displays indicator (shows own typing).
 *   **Party Mode:** Admin context menu toggles state via server broadcast.
-*   **UI/UX:** Discord-inspired dark theme, message grouping, styled scrollbars, fixed various layout issues (typing indicator position, message spacing, avatar centering, attachment button alignment, **channel name alignment in sidebar**).
+*   **UI/UX:** Discord-inspired dark theme, message grouping, styled scrollbars, fixed various layout issues (typing indicator position, message spacing, avatar centering, attachment button alignment, channel name alignment in sidebar). **Added Riot mastery tag** `(Champion Main)` next to sender name in chat messages if account is linked.
 *   **Code Quality:** ESLint/Prettier configured and applied.
 *   **Attachments:**
     *   **File Uploads (S3):** '+' button now shows a context menu. Selecting "Upload File..." triggers a hidden file input. Reads file (<=10MB), sends via IPC/WebSocket. Server uploads to S3, saves URL. Client displays images/links.
@@ -105,16 +107,19 @@
 *   **Auto-Updates:** Basic implementation added using `electron-updater`. Checks for updates on startup and notifies the user if one is available and downloaded. Requires publishing builds to GitHub Releases.
 *   **Build Process:** Uses `electron-builder` (NSIS target). Configured to publish to GitHub Releases for auto-updates.
 
-## IV. Current State & Last Actions (as of 2025-04-07 ~12:46 AM PDT):
+## IV. Current State & Last Actions (as of 2025-04-07 ~1:20 AM PDT):
 
+*   **Added:** Riot account linking feature:
+    *   Server handles API calls (Account-V1, Champion-Mastery-V4) and stores Riot data (PUUID, mastery) in DB. Requires `RIOT_API_KEY` env var. Fetches champion data from Data Dragon.
+    *   Client settings modal includes inputs for Riot ID/Region and a "Link Account" button.
+    *   Client profile modal displays highest mastery champion.
+    *   Client chat messages display `(Champion Main)` tag next to sender name if linked.
 *   **Fixed:** Weather feature now uses a custom modal dialog for city input instead of the unsupported `prompt()`.
 *   **Fixed:** Channel names in sidebar are now correctly left-aligned.
-*   **Added:** Attachment button ('+') now shows a context menu with options:
-    *   "Upload File..." (triggers existing file upload flow).
-    *   "Send Weather..." (opens modal, fetches from OpenWeatherMap, sends as message).
-*   **Added:** `axios` dependency for weather API calls.
+*   **Added:** Attachment button ('+') now shows a context menu with options: "Upload File..." and "Send Weather...".
+*   **Added:** `axios` dependency.
 *   **Configured:** OpenWeatherMap API key added to `main.js`.
-*   **Previous:** All features listed above were implemented, code pushed (commit `7c17511`), app rebuilt. S3 bucket confirmed. `electron-store` and `electron-updater` added.
+*   **Previous:** Code pushed (commit `7c17511`), app rebuilt. S3 bucket confirmed. `electron-store` and `electron-updater` added.
 
 ## V. Workflow Reminders:
 
