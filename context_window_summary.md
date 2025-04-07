@@ -26,7 +26,7 @@
     *   Listens for IPC events: `signup-request`, `login-request`, `send-message`, `edit-message`, `delete-message`, `switch-channel`, `create-channel`, `delete-channel`, `get-user-profile`, `start-typing`, `stop-typing`, `toggle-user-party-mode`, `request-own-profile`, `save-about-me`, `save-profile-picture`, `send-file-attachment`, `request-status`, context menu triggers, `show-notification`.
     *   Relays server messages to renderer: `history`, `chat`, `login-response`, `signup-response`, `channel-list`, `user-profile-response`, `own-profile-response`, `profile-updated`, `message-edited`, `message-deleted`, `user-list-update`, `party-mode-update`, `typing-update`, `error`.
     *   Shows desktop notifications via Electron's `Notification` API for mentions when the window is not focused.
-    *   Includes basic auto-update check on startup using `electron-updater`.
+    *   Includes basic auto-update check on startup using `electron-updater`. Added console logging for updater events, relayed to renderer via IPC (`log-message`) for visibility in packaged app DevTools.
 *   **Renderer Process (`index.html`, `renderer.js`, `style.css`):**
     *   Displays the UI (Login/Signup view, Chat view).
     *   Chat view includes: Channel sidebar, main message area, user list sidebar, modals (profile view, profile settings, create/delete channel).
@@ -48,6 +48,7 @@
     *   Exposed listeners: `onSignupResponse`, `onLoginResponse`, `onMessageReceived`, `onMessageEdited`, `onMessageDeleted`, `onLoadHistory`, `onChannelList`, `onUserProfileResponse`, `onOwnProfileResponse`, `onProfileUpdated`, `onUserListUpdate`, `onPartyModeUpdate`, `onTypingUpdate`, `onStatusUpdate`, `onSendError`, `onError`, modal triggers.
     *   Includes `cleanupListeners` function.
     *   Exposes `getChannelStates` (invoke) and `updateChannelState` (send) for persistent state management.
+    *   Exposes `onLogMessage` listener to receive logs from main process.
 *   **Configuration Files:**
     *   `eslint.config.js`: ESLint flat config (v9+), extends recommended, integrates Prettier, allows `console.log`.
     *   `.prettierrc.json`: Prettier config (single quotes, semi-colons, tab width 2).

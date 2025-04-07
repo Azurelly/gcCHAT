@@ -1121,6 +1121,14 @@ newMessagesBar.addEventListener('click', scrollToBottom);
 
 
 // --- IPC Listeners ---
+
+// Listen for log messages from the main process
+window.electronAPI.onLogMessage((log) => {
+  // Use the appropriate console level (log, warn, error)
+  const level = log.level || 'log';
+  console[level]('[Main Process]', ...log.args);
+});
+
 window.electronAPI.onSignupResponse((response) => {
   console.log('Signup Response:', response);
   if (response.success) {

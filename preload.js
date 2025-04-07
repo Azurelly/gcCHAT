@@ -93,6 +93,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getChannelStates: () => ipcRenderer.invoke('get-channel-states'), // Use invoke for request/response
   updateChannelState: (channelName, state) => ipcRenderer.send('update-channel-state', { channelName, state }), // Use send for one-way update
 
+  // Log Relaying
+  onLogMessage: (callback) => ipcRenderer.on('log-message', (_event, value) => callback(value)),
+
   // Cleanup
   cleanupListeners: () => {
     ipcRenderer.removeAllListeners('signup-response');
@@ -114,6 +117,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('status-update');
     ipcRenderer.removeAllListeners('send-error');
     ipcRenderer.removeAllListeners('error');
+    ipcRenderer.removeAllListeners('log-message'); // Add cleanup for log listener
     // No listener cleanup needed for 'show-notification' or 'update-channel-state' (send)
     // No listener cleanup needed for 'get-channel-states' (invoke)
     // Add cleanup for any potential future listeners related to attachments

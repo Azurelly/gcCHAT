@@ -13,8 +13,8 @@ const { autoUpdater } = pkg_updater;
 const require = createRequire(import.meta.url);
 const pkg = require('./package.json');
 const appVersion = pkg.version;
-console.log(`[Main Init] App Version: ${appVersion}`);
-console.log('[Main Init] Imported autoUpdater:', typeof autoUpdater, autoUpdater ? Object.keys(autoUpdater) : 'N/A'); // Log type and keys if object
+logToRenderer('log', `[Main Init] App Version: ${appVersion}`);
+logToRenderer('log', '[Main Init] Imported autoUpdater:', typeof autoUpdater, autoUpdater ? Object.keys(autoUpdater) : 'N/A'); // Log type and keys if object
 
 // --- Configuration ---
 const SERVER_URL = 'wss://gcchat.onrender.com';
@@ -54,6 +54,16 @@ const store = new Store({
 // --- Utility Functions ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Helper to send logs to renderer console
+function logToRenderer(level, ...args) {
+  if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('log-message', { level, args });
+  }
+  // Also log to main process console for development
+  console[level]('[Relayed Log]', ...args);
+}
+
 
 // --- WebSocket Client Logic ---
 function connectToServer() {
@@ -246,50 +256,50 @@ function createWindow() {
   mainWindow.webContents.once('did-finish-load', () => {
     connectToServer();
     // Check for updates after the window is ready and loaded
-    console.log('[Main] did-finish-load: Triggering update check.');
+    logToRenderer('log', '[Main] did-finish-load: Triggering update check.');
     if (autoUpdater && typeof autoUpdater.checkForUpdatesAndNotify === 'function') {
       try {
         autoUpdater.checkForUpdatesAndNotify();
-        console.log('[Main] did-finish-load: checkForUpdatesAndNotify() called successfully.');
+        logToRenderer('log', '[Main] did-finish-load: checkForUpdatesAndNotify() called successfully.');
       } catch (error) {
-        console.error('[Main] did-finish-load: Error calling checkForUpdatesAndNotify():', error);
+        logToRenderer('error', '[Main] did-finish-load: Error calling checkForUpdatesAndNotify():', error);
       }
     } else {
-      console.error('[Main] did-finish-load: autoUpdater object is not valid!');
+      logToRenderer('error', '[Main] did-finish-load: autoUpdater object is not valid!');
     }
   });
 }
 
 app.whenReady().then(() => {
-  console.log('[Main] App is ready. Setting up AutoUpdater listeners...');
+  logToRenderer('log', '[Main] App is ready. Setting up AutoUpdater listeners...');
   try {
     // Set up auto-updater event listeners *before* creating the window
     autoUpdater.on('checking-for-update', () => {
-      console.log('[AutoUpdater] Checking for update...');
+      logToRenderer('log', '[AutoUpdater] Checking for update...');
     });
   autoUpdater.on('update-available', (info) => {
-    console.log('[AutoUpdater] Update available:', info);
+    logToRenderer('log', '[AutoUpdater] Update available:', info);
   });
   autoUpdater.on('update-not-available', (info) => {
-    console.log('[AutoUpdater] Update not available:', info);
+    logToRenderer('log', '[AutoUpdater] Update not available:', info);
   });
   autoUpdater.on('error', (err) => {
-    console.error('[AutoUpdater] Error:', err);
+    logToRenderer('error', '[AutoUpdater] Error:', err);
   });
   autoUpdater.on('download-progress', (progressObj) => {
     let log_message = "Download speed: " + progressObj.bytesPerSecond;
     log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
     log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')';
-    console.log('[AutoUpdater] Download progress:', log_message);
+    logToRenderer('log', '[AutoUpdater] Download progress:', log_message);
   });
   autoUpdater.on('update-downloaded', (info) => {
-    console.log('[AutoUpdater] Update downloaded:', info);
+    logToRenderer('log', '[AutoUpdater] Update downloaded:', info);
     // The 'checkForUpdatesAndNotify' automatically prompts the user to restart.
     // If we wanted manual control, we'd call autoUpdater.quitAndInstall() here after user confirmation.
   });
-    console.log('[Main] AutoUpdater listeners attached successfully.');
+    logToRenderer('log', '[Main] AutoUpdater listeners attached successfully.');
   } catch (error) {
-    console.error('[Main] Error attaching AutoUpdater listeners:', error);
+    logToRenderer('error', '[Main] Error attaching AutoUpdater listeners:', error);
   }
 
   // Now create the main window
