@@ -1,14 +1,16 @@
 import { app, BrowserWindow, ipcMain, Menu, Notification } from 'electron'; // Added Notification
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module'; // Import createRequire
 import os from 'os';
 import { WebSocket } from 'ws';
 import Store from 'electron-store';
 // Correct import for CommonJS module 'electron-updater' in an ES Module context
 import pkg_updater from 'electron-updater'; // Rename to avoid conflict
 const { autoUpdater } = pkg_updater;
-// Import package.json to get version (using import assertion)
-import pkg from './package.json' assert { type: 'json' };
+// Use createRequire to import package.json
+const require = createRequire(import.meta.url);
+const pkg = require('./package.json');
 const appVersion = pkg.version;
 
 // --- Configuration ---
