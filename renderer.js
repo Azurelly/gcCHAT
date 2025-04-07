@@ -172,7 +172,7 @@ function showProfileModal(profile) {
     profileModalAvatar.style.backgroundColor = getAvatarColor(profile.username);
   }
   // Display Riot Mastery in profile modal
-  const masteryDiv = document.getElementById('profile-modal-mastery'); // Need to add this ID to HTML if not present
+  const masteryDiv = document.getElementById('profile-modal-mastery'); // Check if it exists
   if (masteryDiv) masteryDiv.remove(); // Remove old one if exists
 
   if (profile.riotHighestMasteryChampionName) {
@@ -196,7 +196,13 @@ function showProfileModal(profile) {
 
       newMasteryDiv.appendChild(masteryTitle);
       newMasteryDiv.appendChild(masteryText);
-      profileModal.querySelector('.profile-body').appendChild(newMasteryDiv);
+      // Correctly reference the modal body to append the new div
+      const profileModalElement = document.getElementById('profile-modal'); // Get the modal element by ID
+      if (profileModalElement) {
+          profileModalElement.querySelector('.profile-body').appendChild(newMasteryDiv); // Use profileModalElement here
+      } else {
+          console.error("Could not find profile modal element to append mastery info.");
+      }
   }
 
   profileModalBackdrop.style.display = 'flex';
