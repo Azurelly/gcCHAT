@@ -22,7 +22,7 @@ const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10MB limit
 
 // AWS S3 Configuration (Read from Environment Variables)
 const AWS_REGION = process.env.AWS_REGION || 'us-west-1'; // Default to user-provided region
-const AWS_S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || 'gcchat-s3-uploader'; // Default to user-provided bucket
+const AWS_S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || 'gcchat-uploads-unique'; // Updated Default
 const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID; // Must be set in environment
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY; // Must be set in environment
 

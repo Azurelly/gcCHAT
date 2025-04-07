@@ -456,14 +456,24 @@ function addMessage(messageData) {
     }
   } else {
     // Regular text message - check for mentions
-    const mentionPattern = new RegExp(`@${localUsername}\\b`, 'i'); // Case-insensitive mention check
+    const mentionPattern = new RegExp(`(@${localUsername}\\b)`, 'gi'); // Global, case-insensitive, capture group
     if (messageData.text && mentionPattern.test(messageData.text)) {
-      messageGroup.classList.add('mentioned'); // Add class to highlight the whole group
-      // Optionally, wrap the mention itself in a span for specific styling
-      // textDiv.innerHTML = messageData.text.replace(mentionPattern, '<span class="mention-highlight">$&</span>');
-      textDiv.textContent = messageData.text; // Keep it simple for now
+      // messageGroup.classList.add('mentioned'); // REMOVED: Don't highlight the whole group
+      textDiv.classList.add('mentioned'); // ADDED: Highlight just this message text div
+      // Highlight the specific mention text and make it clickable
+      textDiv.innerHTML = messageData.text.replace(
+         mentionPattern,
+         '<span class="mention-highlight" data-username="$1">$&</span>' // Use $& for the full match (@username)
+      );
+      // Add click listeners to the created mention spans
+      textDiv.querySelectorAll('.mention-highlight').forEach(span => {
+        const mentionedUser = span.dataset.username.substring(1); // Remove leading '@'
+        span.addEventListener('click', () => {
+          window.electronAPI.getUserProfile(mentionedUser);
+        });
+      });
     } else {
-      textDiv.textContent = messageData.text;
+      textDiv.textContent = messageData.text; // No mentions, just set text
     }
   }
 

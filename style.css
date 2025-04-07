@@ -321,33 +321,35 @@ body {
 .message-group {
   display: flex;
   align-items: flex-start;
-  margin-top: 17px; /* Space between different sender groups */
+  margin-top: 20px; /* Increased space between different sender groups */
   position: relative;
   padding: 0 20px;
 }
 /* Reduce top margin for consecutive messages from the same sender */
 .message-group.consecutive {
-  margin-top: 2px; /* Small gap for consecutive messages */
+  margin-top: 4px; /* Slightly larger gap for consecutive messages */
 }
-/* Highlight mentioned messages */
-.message-group.mentioned {
+/* Highlight background/border for individual messages where user is mentioned */
+.message-text.mentioned {
   background-color: rgba(250, 166, 26, 0.05); /* Subtle yellow background */
   border-left: 2px solid #faa61a; /* Yellow left border */
-  padding-left: 18px; /* Adjust padding to account for border */
+  /* Adjust padding slightly to account for border */
+  margin-left: -12px; /* Pull left to align border */
+  padding-left: 10px;
 }
-.message-group.mentioned .message-avatar {
-  left: 18px; /* Adjust avatar position */
-}
-.message-group.mentioned .message-group-content {
-  padding-left: 73px; /* Adjust content padding */
-}
-/* Optional: Highlight the specific @mention text */
+
+/* Highlight the specific @mention text within a message */
 .mention-highlight {
-  background-color: hsla(235, 85.6%, 64.7%, 0.3);
-  color: #c8cdff;
-  padding: 0 2px;
+  background-color: hsla(235, 85.6%, 64.7%, 0.7); /* Darker highlight */
+  color: #fff; /* White text */
+  padding: 1px 3px;
   border-radius: 3px;
   font-weight: 500;
+  cursor: pointer;
+}
+.mention-highlight:hover {
+  background-color: hsla(235, 85.6%, 64.7%, 0.9); /* Slightly darker on hover */
+  text-decoration: underline;
 }
 
 .message-group .message-avatar {
