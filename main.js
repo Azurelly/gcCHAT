@@ -4,7 +4,9 @@ import { fileURLToPath } from 'url';
 import os from 'os';
 import { WebSocket } from 'ws';
 import Store from 'electron-store';
-import { autoUpdater } from 'electron-updater';
+// Correct import for CommonJS module 'electron-updater' in an ES Module context
+import pkg from 'electron-updater';
+const { autoUpdater } = pkg;
 
 // --- Configuration ---
 const SERVER_URL = 'wss://gcchat.onrender.com';
