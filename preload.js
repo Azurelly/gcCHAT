@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveProfilePicture: (imageDataUrl) => ipcRenderer.send('save-profile-picture', imageDataUrl), // New
   onOwnProfileResponse: (callback) =>
     ipcRenderer.on('own-profile-response', (_event, value) => callback(value)),
+  onProfileUpdated: (callback) => // New listener for broadcast updates
+    ipcRenderer.on('profile-updated', (_event, value) => callback(value)),
 
   // Party Mode & Typing
   toggleUserPartyMode: (username) =>
@@ -93,7 +95,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('load-history');
     ipcRenderer.removeAllListeners('channel-list');
     ipcRenderer.removeAllListeners('user-profile-response');
-    ipcRenderer.removeAllListeners('own-profile-response'); // Add cleanup
+    ipcRenderer.removeAllListeners('own-profile-response');
+    ipcRenderer.removeAllListeners('profile-updated'); // Add cleanup
     ipcRenderer.removeAllListeners('user-list-update');
     ipcRenderer.removeAllListeners('party-mode-update');
     ipcRenderer.removeAllListeners('typing-update');

@@ -95,6 +95,9 @@ function connectToServer() {
         case 'own-profile-response': // For settings modal (from server)
           mainWindow?.webContents.send('own-profile-response', parsedMessage.profile);
           break;
+        case 'profile-updated': // Received from server when someone updates PFP
+          mainWindow?.webContents.send('profile-updated', parsedMessage.payload);
+          break;
         case 'message-edited':
           mainWindow?.webContents.send('message-edited', parsedMessage.payload);
           break;
