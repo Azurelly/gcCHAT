@@ -244,22 +244,53 @@ body {
   flex-shrink: 0;
 }
 
-/* Style for channel item when it has unread messages or mentions */
-.channel-item.has-unread {
+/* New indicator for just unread messages (no mention) */
+.channel-item .new-message-count {
+  background-color: #4f545c; /* Grey background */
+  color: #dcddde; /* Light grey text */
+  font-size: 0.7em;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 10px;
+  line-height: 1;
+  display: inline-block; /* Initially hidden via JS */
+  margin-left: auto; /* Push to the right */
+  flex-shrink: 0;
+}
+
+
+/* Style for channel item when it has a MENTION */
+.channel-item.has-mention {
   color: #fff; /* Make text white */
   font-weight: 600; /* Make text bold */
 }
-.channel-item.has-unread:not(.active) {
+.channel-item.has-mention:not(.active) {
    background-color: transparent; /* Don't apply hover background if unread but not active */
 }
-.channel-item.has-unread:not(.active):hover {
+.channel-item.has-mention:not(.active):hover {
    background-color: #3a3c43; /* Apply hover background on actual hover */
 }
-.channel-item.has-unread::before {
-  color: #b9bbbe; /* Keep hash grey unless active */
+.channel-item.has-mention::before {
+  color: #fff; /* Make hash white for mentions */
 }
-.channel-item.active.has-unread::before {
-  color: #fff; /* Ensure hash is white when active and unread */
+/* .channel-item.active.has-mention::before { color: #fff; } */ /* Already covered */
+
+/* Style for channel item when it has NEW MESSAGES (no mention) */
+.channel-item.has-new-message {
+  color: #dcddde; /* Slightly brighter grey text */
+  font-weight: 500; /* Keep font weight normal */
+}
+.channel-item.has-new-message:not(.active) {
+   background-color: transparent;
+}
+.channel-item.has-new-message:not(.active):hover {
+   background-color: #3a3c43;
+}
+.channel-item.has-new-message::before {
+  color: #b9bbbe; /* Keep hash grey */
+}
+.channel-item.active.has-new-message::before {
+  color: #fff; /* Make hash white if active */
 }
 
 #user-area {

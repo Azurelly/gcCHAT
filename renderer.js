@@ -102,7 +102,8 @@ let mentionQuery = '';
 let mentionStartIndex = -1; // Track where the '@' started
 let mentionSuggestions = [];
 let selectedMentionIndex = -1;
-let channelReadStates = {}; // { channelName: { unreadCount: 0, hasMention: false } }
+// let channelReadStates = {}; // REMOVED: Replaced by persistent storage
+let persistentChannelStates = {}; // Loaded from main process via electron-store
 
 
 // --- UI Switching ---
@@ -130,6 +131,8 @@ function showChatView() {
   attachmentButton.disabled = false;
   messageInput.focus();
   updateChannelHighlight();
+  // Fetch persistent states when showing chat view
+  loadPersistentChannelStates();
 }
 function showAuthError(message) {
   authErrorDiv.textContent = message;
@@ -274,6 +277,19 @@ profilePictureInput.addEventListener('change', (event) => {
 });
 
 // --- Channel UI ---
+// Function to load persistent states from main process
+async function loadPersistentChannelStates() {
+  try {
+    persistentChannelStates = await window.electronAPI.getChannelStates();
+    console.log('[Renderer] Loaded persistent channel states:', persistentChannelStates);
+    // Update all indicators after loading
+    availableChannels.forEach(channelName => updateChannelIndicators(channelName));
+  } catch (error) {
+    console.error('[Renderer] Error loading persistent channel states:', error);
+    persistentChannelStates = {}; // Fallback to empty state on error
+  }
+}
+
 // Function to update the visual indicators for a specific channel
 function updateChannelIndicators(channelName) {
   const channelItem = channelListDiv.querySelector(`.channel-item[data-channel="${channelName}"]`);
@@ -281,31 +297,62 @@ function updateChannelIndicators(channelName) {
 
   let mentionIndicator = channelItem.querySelector('.mention-indicator');
   let unreadBadge = channelItem.querySelector('.unread-badge');
-  const state = channelReadStates[channelName] || { unreadCount: 0, hasMention: false };
+  let newMessageCount = channelItem.querySelector('.new-message-count'); // New indicator
+
+  // Use persistentChannelStates now
+  const state = persistentChannelStates[channelName] || { unreadCount: 0, hasMention: false };
 
   // Create indicators if they don't exist
   if (!mentionIndicator) {
     mentionIndicator = document.createElement('span');
     mentionIndicator.classList.add('mention-indicator');
-    channelItem.appendChild(mentionIndicator); // Append to the channel item
+    channelItem.appendChild(mentionIndicator);
   }
   if (!unreadBadge) {
     unreadBadge = document.createElement('span');
     unreadBadge.classList.add('unread-badge');
-    channelItem.appendChild(unreadBadge); // Append to the channel item
+    channelItem.appendChild(unreadBadge);
+  }
+  if (!newMessageCount) { // Create the new indicator element
+    newMessageCount = document.createElement('span');
+    newMessageCount.classList.add('new-message-count');
+    channelItem.appendChild(newMessageCount);
   }
 
   // Update visibility and content based on state
-  mentionIndicator.style.display = state.hasMention ? 'inline-block' : 'none';
-  if (state.unreadCount > 0) {
+  if (state.hasMention) {
+    mentionIndicator.style.display = 'inline-block'; // Show red dot
     unreadBadge.textContent = state.unreadCount > 99 ? '99+' : state.unreadCount;
-    unreadBadge.style.display = 'inline-block';
+    unreadBadge.style.display = 'inline-block'; // Show red count badge
+    newMessageCount.style.display = 'none'; // Hide grey count
+    channelItem.classList.add('has-mention');
+    channelItem.classList.remove('has-new-message');
+  } else if (state.unreadCount > 0) {
+    mentionIndicator.style.display = 'none'; // Hide red dot
+    unreadBadge.style.display = 'none'; // Hide red count badge
+    newMessageCount.textContent = state.unreadCount > 99 ? '99+' : state.unreadCount;
+    newMessageCount.style.display = 'inline-block'; // Show grey count
+    channelItem.classList.remove('has-mention');
+    channelItem.classList.add('has-new-message');
   } else {
+    // No unread, no mention
+    mentionIndicator.style.display = 'none';
     unreadBadge.style.display = 'none';
+    newMessageCount.style.display = 'none';
+    channelItem.classList.remove('has-mention');
+    channelItem.classList.remove('has-new-message');
   }
+}
 
-  // Add/remove class for general unread state (e.g., bolding channel name)
-  channelItem.classList.toggle('has-unread', state.unreadCount > 0 || state.hasMention);
+// Function to mark a channel as read (updates state and persists)
+function markChannelAsRead(channelName) {
+  if (persistentChannelStates[channelName] && (persistentChannelStates[channelName].unreadCount > 0 || persistentChannelStates[channelName].hasMention)) {
+    console.log(`[Renderer] Marking channel ${channelName} as read.`);
+    persistentChannelStates[channelName] = { unreadCount: 0, hasMention: false };
+    updateChannelIndicators(channelName); // Update UI immediately
+    // Persist the change
+    window.electronAPI.updateChannelState(channelName, persistentChannelStates[channelName]);
+  }
 }
 
 function renderChannelList() {
@@ -337,8 +384,13 @@ function renderChannelList() {
     unreadBadge.classList.add('unread-badge');
     unreadBadge.style.display = 'none'; // Initially hidden
 
+    const newMessageCount = document.createElement('span'); // Create new indicator placeholder
+    newMessageCount.classList.add('new-message-count');
+    newMessageCount.style.display = 'none'; // Initially hidden
+
     channelLink.appendChild(mentionIndicator);
     channelLink.appendChild(unreadBadge);
+    channelLink.appendChild(newMessageCount); // Add new placeholder
 
     channelListDiv.appendChild(channelLink);
 
@@ -427,14 +479,21 @@ function addMessage(messageData, isHistory = false) { // Added isHistory flag
 
   // Update read states for inactive channels ONLY for non-history messages
   if (!isHistory && messageChannel !== currentChannel) {
-    if (!channelReadStates[messageChannel]) {
-      channelReadStates[messageChannel] = { unreadCount: 0, hasMention: false };
+    // Use persistentChannelStates
+    if (!persistentChannelStates[messageChannel]) {
+      persistentChannelStates[messageChannel] = { unreadCount: 0, hasMention: false };
     }
-    channelReadStates[messageChannel].unreadCount++;
-    if (!channelReadStates[messageChannel].hasMention && mentionPattern.test(text)) {
-      channelReadStates[messageChannel].hasMention = true;
+    persistentChannelStates[messageChannel].unreadCount++;
+    let mentioned = false;
+    if (!persistentChannelStates[messageChannel].hasMention && mentionPattern.test(text)) {
+      persistentChannelStates[messageChannel].hasMention = true;
+      mentioned = true;
     }
     updateChannelIndicators(messageChannel); // Update indicators for the specific channel
+
+    // Persist the updated state
+    window.electronAPI.updateChannelState(messageChannel, persistentChannelStates[messageChannel]);
+
     return; // Don't add the message visually if it's not for the current channel
   }
 
@@ -583,9 +642,8 @@ function scrollToBottom(forceClearIndicators = false) { // Added forceClearIndic
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
   hideNewMessagesBar();
   // Also clear indicators for the current channel when explicitly scrolling to bottom
-  if (forceClearIndicators && channelReadStates[currentChannel]) {
-    channelReadStates[currentChannel] = { unreadCount: 0, hasMention: false };
-    updateChannelIndicators(currentChannel);
+  if (forceClearIndicators) {
+     markChannelAsRead(currentChannel); // Use the new function
   }
 }
 
@@ -1044,11 +1102,7 @@ messagesDiv.addEventListener('scroll', () => {
     if (isScrolledNearBottom) {
       hideNewMessagesBar(); // Hide bar if user scrolls down manually
       // Clear indicators for the current channel when scrolled to bottom
-      if (channelReadStates[currentChannel] && (channelReadStates[currentChannel].unreadCount > 0 || channelReadStates[currentChannel].hasMention)) {
-        console.log(`Clearing indicators for ${currentChannel} due to scroll bottom.`);
-        channelReadStates[currentChannel] = { unreadCount: 0, hasMention: false };
-        updateChannelIndicators(currentChannel);
-      }
+      markChannelAsRead(currentChannel); // Use the new function
     }
     // console.log('Scroll Pos:', messagesDiv.scrollTop, 'Near Bottom:', isScrolledNearBottom); // Debugging
   }, 100); // Debounce scroll checks
@@ -1110,12 +1164,9 @@ window.electronAPI.onLoadHistory((data) => {
   updateChannelHighlight();
   clearMessages(); // Resets scroll state and hides bar
 
-  // Clear indicators for the new channel *before* loading history
+  // Mark the new channel as read *before* loading history
   // This prevents briefly showing indicators before they are cleared by scroll check
-  if (channelReadStates[currentChannel]) {
-      channelReadStates[currentChannel] = { unreadCount: 0, hasMention: false };
-      updateChannelIndicators(currentChannel); // Update UI immediately
-  }
+  markChannelAsRead(currentChannel); // Use the new function
 
   data.payload.forEach((msg) => addMessage(msg, true)); // Pass true for isHistory
 
@@ -1129,13 +1180,10 @@ window.electronAPI.onLoadHistory((data) => {
 
     console.log(`History loaded for ${currentChannel}. ScrollTop: ${messagesDiv.scrollTop}, ClientHeight: ${messagesDiv.clientHeight}, ScrollHeight: ${height}, NearBottom: ${isScrolledNearBottom}`);
 
-    if (!isScrolledNearBottom && channelReadStates[currentChannel]) {
-        // This case shouldn't happen often if cleared before load, but as a fallback
-        console.warn(`Indicators for ${currentChannel} might still be present despite history load.`);
-    } else if (isScrolledNearBottom && channelReadStates[currentChannel]) {
-        // If somehow indicators were set during history load (shouldn't happen), clear them now
-        channelReadStates[currentChannel] = { unreadCount: 0, hasMention: false };
-        updateChannelIndicators(currentChannel);
+    // Check scroll position again after DOM updates and potentially mark as read again
+    // (This handles cases where history is short and doesn't require scrolling)
+    if (isScrolledNearBottom) {
+       markChannelAsRead(currentChannel);
     }
 
     // Ensure scroll is actually at the bottom if it should be

@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
 import { WebSocket } from 'ws';
+import Store from 'electron-store';
 
 // --- Configuration ---
 const SERVER_URL = 'wss://gcchat.onrender.com';
@@ -14,6 +15,30 @@ let clientSocket = null;
 let loggedInUsername = null;
 let currentChannel = null;
 let isAdmin = false;
+
+// Initialize electron-store
+const store = new Store({
+  // Schema definition helps with validation and defaults
+  schema: {
+    channelStates: {
+      type: 'object',
+      patternProperties: {
+        // Key is the channel name (string)
+        '^.+$': {
+          type: 'object',
+          properties: {
+            hasUnread: { type: 'boolean', default: false },
+            hasMention: { type: 'boolean', default: false },
+            // lastSeenTimestamp: { type: 'number', default: 0 } // Optional: Could add later
+          },
+          required: ['hasUnread', 'hasMention']
+        }
+      },
+      default: {}
+    }
+  }
+});
+
 
 // --- Utility Functions ---
 const __filename = fileURLToPath(import.meta.url);
@@ -494,7 +519,22 @@ ipcMain.on('show-notification', (_event, options) => {
   } else {
     console.warn('[Main] Notifications not supported on this system.');
   }
+}); // Added semicolon
+
+// --- Persistent State IPC Handlers ---
+ipcMain.handle('get-channel-states', async () => {
+  return store.get('channelStates', {}); // Return stored states or empty object
 });
+
+ipcMain.on('update-channel-state', (_event, { channelName, state }) => {
+  if (!channelName || typeof state !== 'object') {
+    console.error('[Main] Invalid update-channel-state payload:', { channelName, state });
+    return;
+  }
+  // console.log(`[Main] Updating state for ${channelName}:`, state); // Debug log
+  store.set(`channelStates.${channelName}`, state);
+});
+
 
 // Helper function to show mention notification
 function showMentionNotification(sender, messageText) {
