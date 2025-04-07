@@ -747,19 +747,24 @@ async function handleTogglePartyMode(ws, targetUsername) {
 
 async function handleLinkRiotAccount(ws, gameName, tagLine, platformId) {
     const clientData = clients.get(ws);
-    if (!clientData || !clientData.username) return sendError(ws, 'Not logged in.');
-    if (!gameName || !tagLine || !platformId) return sendError(ws, 'Game Name, Tag Line, and Region are required.');
+    if (!clientData || !clientData.username) {
+        // Send error response if not logged in
+        return sendResponse(ws, 'link-riot-account-response', { success: false, error: 'Not logged in.' });
+    }
+    if (!gameName || !tagLine || !platformId) {
+        return sendResponse(ws, 'link-riot-account-response', { success: false, error: 'Game Name, Tag Line, and Region are required.' });
+    }
 
     const lowerPlatformId = platformId.toLowerCase();
     if (!RIOT_REGION_MAP[lowerPlatformId]) {
-        return sendError(ws, 'Invalid region selected.');
+        return sendResponse(ws, 'link-riot-account-response', { success: false, error: 'Invalid region selected.' });
     }
 
     try {
         // 1. Get PUUID from Riot ID
         const accountData = await getRiotAccountByRiotId(gameName, tagLine);
         const puuid = accountData.puuid;
-        if (!puuid) throw new Error('Could not retrieve PUUID.'); // Should be caught by getRiotAccountByRiotId
+        if (!puuid) throw new Error('Could not retrieve PUUID.');
 
         // 2. Get Highest Mastery Champion
         const masteryData = await getHighestChampionMastery(puuid, lowerPlatformId);
@@ -772,9 +777,9 @@ async function handleLinkRiotAccount(ws, gameName, tagLine, platformId) {
             {
                 $set: {
                     riotPuuid: puuid,
-                    riotGameName: accountData.gameName, // Store the verified gameName
-                    riotTagLine: accountData.tagLine,   // Store the verified tagLine
-                    riotPlatformId: lowerPlatformId, // Store the selected platform ID
+                    riotGameName: accountData.gameName,
+                    riotTagLine: accountData.tagLine,
+                    riotPlatformId: lowerPlatformId,
                     riotHighestMasteryChampionId: highestMasteryChampionId,
                     riotHighestMasteryPoints: highestMasteryPoints,
                 }
@@ -794,15 +799,26 @@ async function handleLinkRiotAccount(ws, gameName, tagLine, platformId) {
                     riotHighestMasteryPoints: highestMasteryPoints,
                 }
             });
-            // Broadcast profile update so others see the new mastery tag? Maybe not necessary immediately.
-            // Let's just update on next profile view/login for now.
         } else {
-            throw new Error('Failed to update user document in database.');
+            // This case might happen if the data was already the same, treat as success?
+             console.log(`[Profile] User ${clientData.username} attempted to link Riot account, but data was unchanged.`);
+             sendResponse(ws, 'link-riot-account-response', {
+                success: true, // Still success, just no DB change
+                profile: {
+                    riotGameName: accountData.gameName,
+                    riotTagLine: accountData.tagLine,
+                    riotPlatformId: lowerPlatformId,
+                    riotHighestMasteryChampionName: highestMasteryChampionId ? getChampionNameById(highestMasteryChampionId) : null,
+                    riotHighestMasteryPoints: highestMasteryPoints,
+                }
+            });
+            // throw new Error('Failed to update user document in database.');
         }
 
     } catch (error) {
         console.error(`[Profile] Error linking Riot account for ${clientData.username}:`, error.message);
-        sendError(ws, `Failed to link Riot account: ${error.message}`);
+        // Send specific error response back to the client
+        sendResponse(ws, 'link-riot-account-response', { success: false, error: `Failed to link Riot account: ${error.message}` });
     }
 }
 
